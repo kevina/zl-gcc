@@ -57,7 +57,7 @@ along with GCC; see the file COPYING3.  If not see
 cpp_options *cpp_opts;
 
 /* Input filename.  */
-static const char *this_input_filename;
+const char *this_input_filename;
 
 /* Filename and stream for preprocessed output.  */
 static const char *out_fname;
@@ -1163,6 +1163,7 @@ c_common_post_options (const char **pfilename)
      immediately.  */
   errorcount += cpp_errors (parse_in);
 
+#ifndef NO_CPP
   *pfilename = this_input_filename
     = cpp_read_main_file (parse_in, in_fnames[0]);
   /* Don't do any compilation or preprocessing if there is no input file.  */
@@ -1171,6 +1172,9 @@ c_common_post_options (const char **pfilename)
       errorcount++;
       return false;
     }
+#else
+  this_input_filename = in_fnames[0];
+#endif
 
   if (flag_working_directory
       && flag_preprocess_only && !flag_no_line_commands)
@@ -1257,6 +1261,7 @@ c_common_parse_file (int set_yydebug)
 	(*debug_hooks->end_source_file) (0);
       if (++i >= num_in_fnames)
 	break;
+#ifndef NO_CPP
       cpp_undef_all (parse_in);
       cpp_clear_file_cache (parse_in);
       this_input_filename
@@ -1265,6 +1270,9 @@ c_common_parse_file (int set_yydebug)
 	 cpplib has issued a diagnostic.  */
       if (!this_input_filename)
 	break;
+#else
+      this_input_filename = in_fnames[i];
+#endif
     }
 }
 

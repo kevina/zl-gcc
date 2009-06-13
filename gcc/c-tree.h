@@ -494,8 +494,10 @@ extern void shadow_tag (const struct c_declspecs *);
 extern void shadow_tag_warned (const struct c_declspecs *, int);
 extern tree start_enum (struct c_enum_contents *, tree);
 extern int  start_function (struct c_declspecs *, struct c_declarator *, tree);
+extern void prep_function (tree);
 extern tree start_decl (struct c_declarator *, struct c_declspecs *, bool,
 			tree);
+extern tree prep_decl (tree, bool);
 extern tree start_struct (enum tree_code, tree);
 extern void store_parm_decls (void);
 extern void store_parm_decls_from (struct c_arg_info *);
@@ -518,6 +520,8 @@ extern struct c_declspecs *declspecs_add_type (struct c_declspecs *,
 extern struct c_declspecs *declspecs_add_scspec (struct c_declspecs *, tree);
 extern struct c_declspecs *declspecs_add_attrs (struct c_declspecs *, tree);
 extern struct c_declspecs *finish_declspecs (struct c_declspecs *);
+
+extern tree lookup_tag (enum tree_code, tree, int thislevel_only);
 
 /* in c-objc-common.c */
 extern bool c_objc_common_init (void);

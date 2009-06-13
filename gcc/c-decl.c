@@ -2632,7 +2632,7 @@ define_label (location_t location, tree name)
    it is RECORD_TYPE or UNION_TYPE or ENUMERAL_TYPE.
    If the wrong kind of type is found, an error is reported.  */
 
-static tree
+tree
 lookup_tag (enum tree_code code, tree name, int thislevel_only)
 {
   struct c_binding *b = I_TAG_BINDING (name);
@@ -3167,7 +3167,6 @@ start_decl (struct c_declarator *declarator, struct c_declspecs *declspecs,
 	    bool initialized, tree attributes)
 {
   tree decl;
-  tree tem;
   enum deprecated_states deprecated_state = DEPRECATED_NORMAL;
 
   /* An object declared as __attribute__((deprecated)) suppresses
@@ -3241,41 +3240,6 @@ start_decl (struct c_declarator *declarator, struct c_declspecs *declspecs,
 	  }
       }
 
-  if (initialized)
-    {
-      if (current_scope == file_scope)
-	TREE_STATIC (decl) = 1;
-
-      /* Tell 'pushdecl' this is an initialized decl
-	 even though we don't yet have the initializer expression.
-	 Also tell 'finish_decl' it may store the real initializer.  */
-      DECL_INITIAL (decl) = error_mark_node;
-    }
-
-  /* If this is a function declaration, write a record describing it to the
-     prototypes file (if requested).  */
-
-  if (TREE_CODE (decl) == FUNCTION_DECL)
-    gen_aux_info_record (decl, 0, 0, TYPE_ARG_TYPES (TREE_TYPE (decl)) != 0);
-
-  /* ANSI specifies that a tentative definition which is not merged with
-     a non-tentative definition behaves exactly like a definition with an
-     initializer equal to zero.  (Section 3.7.2)
-
-     -fno-common gives strict ANSI behavior, though this tends to break
-     a large body of code that grew up without this rule.
-
-     Thread-local variables are never common, since there's no entrenched
-     body of code to break, and it allows more efficient variable references
-     in the presence of dynamic linking.  */
-
-  if (TREE_CODE (decl) == VAR_DECL
-      && !initialized
-      && TREE_PUBLIC (decl)
-      && !DECL_THREAD_LOCAL_P (decl)
-      && !flag_no_common)
-    DECL_COMMON (decl) = 1;
-
   /* Set attributes here so if duplicate decl, will have proper attributes.  */
   decl_attributes (&decl, attributes, 0);
 
@@ -3318,6 +3282,74 @@ start_decl (struct c_declarator *declarator, struct c_declspecs *declspecs,
       && lookup_attribute ("noinline", DECL_ATTRIBUTES (decl)))
     warning (OPT_Wattributes, "inline function %q+D given attribute noinline",
 	     decl);
+
+  return prep_decl (decl, initialized);
+}
+
+tree
+prep_decl (tree decl, bool initialized)
+{
+  tree tem;
+
+  /* Record constancy and volatility.  */
+  c_apply_type_quals_to_decl (TYPE_QUALS(TREE_TYPE(decl)), decl);
+  
+  /* If a type has volatile components, it should be stored in memory.
+     Otherwise, the fact that those components are volatile
+     will be ignored, and would even crash the compiler.
+     Of course, this only makes sense on  VAR,PARM, and RESULT decl's.   */
+  if (C_TYPE_FIELDS_VOLATILE (TREE_TYPE (decl))
+      && (TREE_CODE (decl) == VAR_DECL ||  TREE_CODE (decl) == PARM_DECL
+	  || TREE_CODE (decl) == RESULT_DECL))
+    {
+      /* It is not an error for a structure with volatile fields to
+         be declared register, but reset DECL_REGISTER since it
+         cannot actually go in a register.  */
+      int was_reg = C_DECL_REGISTER (decl);
+      C_DECL_REGISTER (decl) = 0;
+      DECL_REGISTER (decl) = 0;
+      c_mark_addressable (decl);
+      C_DECL_REGISTER (decl) = was_reg;
+    }
+  
+  /* This is the earliest point at which we might know the assembler
+     name of a variable.  Thus, if it's known before this, die horribly.  */
+  gcc_assert (!DECL_ASSEMBLER_NAME_SET_P (decl));
+  
+  if (initialized)
+    {
+      if (current_scope == file_scope)
+        TREE_STATIC (decl) = 1;
+      
+      /* Tell 'pushdecl' this is an initialized decl
+         even though we don't yet have the initializer expression.
+         Also tell 'finish_decl' it may store the real initializer.  */
+      DECL_INITIAL (decl) = error_mark_node;
+    }
+
+  /* If this is a function declaration, write a record describing it to the
+     prototypes file (if requested).  */
+
+  if (TREE_CODE (decl) == FUNCTION_DECL)
+    gen_aux_info_record (decl, 0, 0, TYPE_ARG_TYPES (TREE_TYPE (decl)) != 0);
+
+  /* ANSI specifies that a tentative definition which is not merged with
+     a non-tentative definition behaves exactly like a definition with an
+     initializer equal to zero.  (Section 3.7.2)
+
+     -fno-common gives strict ANSI behavior, though this tends to break
+     a large body of code that grew up without this rule.
+
+     Thread-local variables are never common, since there's no entrenched
+     body of code to break, and it allows more efficient variable references
+     in the presence of dynamic linking.  */
+
+  if (TREE_CODE (decl) == VAR_DECL
+      && !initialized
+      && TREE_PUBLIC (decl)
+      && !DECL_THREAD_LOCAL_P (decl)
+      && !flag_no_common)
+    DECL_COMMON (decl) = 1;
 
   /* C99 6.7.4p3: An inline definition of a function with external
      linkage shall not contain a definition of a modifiable object
@@ -4969,31 +5001,6 @@ grokdeclarator (const struct c_declarator *declarator,
 	DECL_REGISTER (decl) = 1;
       }
 
-    /* Record constancy and volatility.  */
-    c_apply_type_quals_to_decl (type_quals, decl);
-
-    /* If a type has volatile components, it should be stored in memory.
-       Otherwise, the fact that those components are volatile
-       will be ignored, and would even crash the compiler.
-       Of course, this only makes sense on  VAR,PARM, and RESULT decl's.   */
-    if (C_TYPE_FIELDS_VOLATILE (TREE_TYPE (decl))
-	&& (TREE_CODE (decl) == VAR_DECL ||  TREE_CODE (decl) == PARM_DECL
-	  || TREE_CODE (decl) == RESULT_DECL))
-      {
-	/* It is not an error for a structure with volatile fields to
-	   be declared register, but reset DECL_REGISTER since it
-	   cannot actually go in a register.  */
-	int was_reg = C_DECL_REGISTER (decl);
-	C_DECL_REGISTER (decl) = 0;
-	DECL_REGISTER (decl) = 0;
-	c_mark_addressable (decl);
-	C_DECL_REGISTER (decl) = was_reg;
-      }
-
-  /* This is the earliest point at which we might know the assembler
-     name of a variable.  Thus, if it's known before this, die horribly.  */
-    gcc_assert (!DECL_ASSEMBLER_NAME_SET_P (decl));
-
     return decl;
   }
 }
@@ -6089,34 +6096,7 @@ int
 start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
 		tree attributes)
 {
-  tree decl1, old_decl;
-  tree restype, resdecl;
-  struct c_label_context_se *nstack_se;
-  struct c_label_context_vm *nstack_vm;
-
-  current_function_returns_value = 0;  /* Assume, until we see it does.  */
-  current_function_returns_null = 0;
-  current_function_returns_abnormally = 0;
-  warn_about_return_type = 0;
-  c_switch_stack = NULL;
-
-  nstack_se = XOBNEW (&parser_obstack, struct c_label_context_se);
-  nstack_se->labels_def = NULL;
-  nstack_se->labels_used = NULL;
-  nstack_se->next = label_context_stack_se;
-  label_context_stack_se = nstack_se;
-
-  nstack_vm = XOBNEW (&parser_obstack, struct c_label_context_vm);
-  nstack_vm->labels_def = NULL;
-  nstack_vm->labels_used = NULL;
-  nstack_vm->scope = 0;
-  nstack_vm->next = label_context_stack_vm;
-  label_context_stack_vm = nstack_vm;
-
-  /* Indicate no valid break/continue context by setting these variables
-     to some non-null, non-label value.  We'll notice and emit the proper
-     error message in c_finish_bc_stmt.  */
-  c_break_label = c_cont_label = size_zero_node;
+  tree decl1;
 
   decl1 = grokdeclarator (declarator, declspecs, FUNCDEF, true, NULL,
 			  &attributes, DEPRECATED_NORMAL);
@@ -6148,6 +6128,43 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
       if (declspecs->storage_class != csc_static)
 	DECL_EXTERNAL (decl1) = !DECL_EXTERNAL (decl1);
     }
+
+  prep_function(decl1);
+
+  return 1;
+}
+
+void 
+prep_function (tree decl1) 
+{
+  tree old_decl;
+  tree restype, resdecl;
+  struct c_label_context_se *nstack_se;
+  struct c_label_context_vm *nstack_vm;
+
+  current_function_returns_value = 0;  /* Assume, until we see it does.  */
+  current_function_returns_null = 0;
+  current_function_returns_abnormally = 0;
+  warn_about_return_type = 0;
+  c_switch_stack = NULL;
+
+  nstack_se = XOBNEW (&parser_obstack, struct c_label_context_se);
+  nstack_se->labels_def = NULL;
+  nstack_se->labels_used = NULL;
+  nstack_se->next = label_context_stack_se;
+  label_context_stack_se = nstack_se;
+
+  nstack_vm = XOBNEW (&parser_obstack, struct c_label_context_vm);
+  nstack_vm->labels_def = NULL;
+  nstack_vm->labels_used = NULL;
+  nstack_vm->scope = 0;
+  nstack_vm->next = label_context_stack_vm;
+  label_context_stack_vm = nstack_vm;
+
+  /* Indicate no valid break/continue context by setting these variables
+     to some non-null, non-label value.  We'll notice and emit the proper
+     error message in c_finish_bc_stmt.  */
+  c_break_label = c_cont_label = size_zero_node;
 
   announce_function (decl1);
 
@@ -6308,8 +6325,6 @@ start_function (struct c_declspecs *declspecs, struct c_declarator *declarator,
   DECL_RESULT (current_function_decl) = resdecl;
 
   start_fname_decls ();
-
-  return 1;
 }
 
 /* Subroutine of store_parm_decls which handles new-style function

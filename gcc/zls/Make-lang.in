@@ -1,0 +1,163 @@
+# Top level -*- makefile -*- fragment for GNU ZL-Simple
+#   Copyright (C) 1997, 1998, 2000, 2001, 2002, 2003, 2004, 2005, 2007,
+#   2008 Free Software Foundation, Inc.
+
+#This file is part of GCC.
+
+#GCC is free software; you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation; either version 3, or (at your option)
+#any later version.
+
+#GCC is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with GCC; see the file COPYING3.  If not see
+# <http://www.gnu.org/licenses/>.
+
+
+# This file provides the language dependent support in the main Makefile.
+# Each language makefile fragment must provide the following targets:
+#
+# foo.all.cross, foo.start.encap, foo.rest.encap,
+# foo.install-common, foo.install-man, foo.install-info, foo.install-pdf,
+# foo.info, foo.dvi, foo.pdf, foo.html, foo.uninstall,
+# foo.mostlyclean, foo.clean, foo.distclean,
+# foo.maintainer-clean, foo.stage1, foo.stage2, foo.stage3, foo.stage4
+#
+# where `foo' is the name of the language.
+#
+# It should also provide rules for:
+#
+# - making any compiler driver (eg: g++)
+# - the compiler proper (eg: cc1plus)
+# - define the names for selecting the language in LANGUAGES.
+
+#
+# Define the names for selecting ZL-Simple in LANGUAGES.
+zls: zls0$(exeext)
+
+# Tell GNU make to ignore these if they exist.
+.PHONY: zls
+
+# Use maximal warnings for this front end.
+zls-warn = $(STRICT_WARN)
+
+# The compiler itself.
+# Shared with C front end:
+# Language-specific object files for C and Objective C.
+#C_AND_ZLS_OBJS = attribs.o c-errors.o c-lex.o c-pragma.o c-decl.o c-typeck.o \
+#  c-convert.o c-aux-info.o c-common.o c-format.o c-semantics.o \
+#  c-ppoutput.o c-cppbuiltin.o \
+#  c-objc-common.o c-dump.o c-pch.o c-parser.o $(C_TARGET_OBJS) \
+#  c-gimplify.o tree-mudflap.o c-pretty-print.o c-omp.o
+C_AND_ZLS_OBJS = attribs.o c-errors.o c-decl.o c-typeck.o \
+  c-convert.o c-aux-info.o c-common.o c-format.o c-semantics.o \
+  c-cppbuiltin.o \
+  c-objc-common.o c-dump.o $(C_TARGET_OBJS) \
+  c-gimplify.o tree-mudflap.o c-pretty-print.o c-omp.o
+
+ZLS_C_OBJS = $(C_AND_ZLS_OBJS) stub-objc.o
+
+# Language-specific object files for ZL-Simple.
+ZLS_OBJS = zls/lang.o zls/opts.o zls/stubs.o zls/parser.o	
+
+zls_OBJS = $(ZLS_OBJS) zls0-checksum.o
+
+zls0-dummy$(exeext): $(ZLS_OBJS) $(ZLS_C_OBJS) dummy-checksum.o $(BACKEND) $(LIBDEPS)
+	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ \
+	      $(ZLS_OBJS) $(ZLS_C_OBJS) dummy-checksum.o \
+	      $(BACKEND) $(LIBS) $(BACKENDLIBS)
+
+zls0-checksum.c : zls0-dummy$(exeext) build/genchecksum$(build_exeext)
+	build/genchecksum$(build_exeext) zls0-dummy$(exeext) > $@
+
+zls0-checksum.o : zls0-checksum.c
+
+zls0$(exeext): $(ZLS_OBJS) $(ZLS_C_OBJS) zls0-checksum.o $(BACKEND) $(LIBDEPS)
+	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ \
+	      $(ZLS_OBJS) $(ZLS_C_OBJS) zls0-checksum.o \
+	      $(BACKEND) $(LIBS) $(BACKENDLIBS)
+
+# ZL-Simple language specific files.
+
+zls/lang.o : zls/lang.c
+
+zls/opts.o : zls/opts.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H)		\
+        $(TREE_H) $(C_PRAGMA_H) $(FLAGS_H) $(TOPLEV_H) langhooks.h		\
+        $(TREE_INLINE_H) $(DIAGNOSTIC_H) intl.h debug.h $(C_COMMON_H)	\
+        opts.h options.h $(MKDEPS_H) incpath.h cppdefault.h $(TARGET_H) \
+	$(TM_P_H) $(VARRAY_H)
+	$(CC) -c $(ALL_CFLAGS) $(ALL_CPPFLAGS) \
+		$< $(OUTPUT_OPTION) ## @TARGET_SYSTEM_ROOT_DEFINE@
+
+zls/parser.o: zls/parser.c
+
+zls/stubs.o: zls/stubs.c
+
+
+zls.srcextra:
+
+#
+# Build hooks:
+
+zls.all.cross:
+zls.start.encap:
+zls.rest.encap:
+zls.info:
+zls.install-info:
+zls.dvi:
+zls.pdf:
+zls.install-pdf:
+zls.html:
+zls.man:
+zls.srcinfo:
+zls.srcman:
+
+zls.tags: force
+	cd $(srcdir)/zls; etags -o TAGS.sub *.c *.h; \
+	etags --include TAGS.sub --include ../TAGS.sub
+
+lang_checks += check-zls
+
+#
+# Install hooks:
+# zls0 is installed elsewhere as part of $(COMPILERS).
+
+zls.install-common:
+
+zls.install-man:
+
+zls.uninstall:
+#
+# Clean hooks:
+# A lot of the ancillary files are deleted by the main makefile.
+# We just have to delete files specific to us.
+zls.mostlyclean:
+	-rm -f zls/*$(objext) zls/xforward zls/fflags
+	-rm -f zls/*$(coverageexts)
+zls.clean: zls.mostlyclean
+	-rm -rf zls-headers
+zls.distclean:
+	-rm -f zls/Makefile zls/Make-host zls/Make-target
+	-rm -f zls/config.status zls/config.cache
+zls.maintainer-clean:
+
+#
+# Stage hooks:
+
+zls.stage1: stage1-start
+	-mv zls/*$(objext) stage1/zls
+zls.stage2: stage2-start
+	-mv zls/*$(objext) stage2/zls
+zls.stage3: stage3-start
+	-mv zls/*$(objext) stage3/zls
+zls.stage4: stage4-start
+	-mv zls/*$(objext) stage4/zls
+zls.stageprofile: stageprofile-start
+	-mv zls/*$(objext) stageprofile/zls
+zls.stagefeedback: stagefeedback-start
+	-mv zls/*$(objext) stagefeedback/zls
