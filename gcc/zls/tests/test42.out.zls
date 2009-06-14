@@ -1,0 +1,43 @@
+# type decls
+(talias FILE (struct _IO_FILE))
+(talias size_t (unsigned-int))
+(talias bool (int))
+(talias EnvironSnapshot (struct EnvironSnapshot))
+(talias Mark (struct Mark))
+(.struct UnmarkedSyntax)
+(.struct Syntax)
+(.struct SyntaxList)
+(.struct SyntaxEnum)
+(.struct Match)
+(talias Context (struct Context))
+(talias Environ (struct Environ))
+(.enum _s_0_)
+(talias Position (enum _s_0_))
+(.struct UserTypeInfo)
+(.struct ModuleInfo)
+# type definitions
+(.enum _s_0_
+   (NoPos 0)
+   (OtherPos 1)
+   (TopLevel 2)
+   (FieldPos 4)
+   (StmtDeclPos 8)
+   (StmtPos 16)
+   (ExpPos 32)
+)
+# function decls
+(fun printf (. ((.ptr (char :const)) ) ...) (int))
+(fun snprintf (. ((.ptr (char :const)) str) ((size_t) size) ((.ptr (char :const)) format) ...) (int))
+(fun strcmp (. ((.ptr (char :const)) s1) ((.ptr (char :const)) s2)) (int))
+(fun parse_class (. ((.ptr (struct Syntax)) p) ((.ptr (Environ)) env)) (.ptr (struct Syntax)))
+(fun main (.) (int))
+# definitions
+(fun main (.) (int) (block
+  (var x$1 (int) 20)
+  (var x$2 (int) 30)
+  (assign x$1 x$2)
+  (return x$1)
+)
+)
+# special
+# done

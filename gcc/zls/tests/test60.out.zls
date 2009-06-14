@@ -1,0 +1,54 @@
+# type decls
+(talias FILE (struct _IO_FILE))
+(talias size_t (unsigned-int))
+(talias bool (int))
+(talias EnvironSnapshot (struct EnvironSnapshot))
+(talias Mark (struct Mark))
+(.struct UnmarkedSyntax)
+(.struct Syntax)
+(.struct SyntaxList)
+(.struct SyntaxEnum)
+(.struct Match)
+(talias Context (struct Context))
+(talias Environ (struct Environ))
+(.enum _s_0_)
+(talias Position (enum _s_0_))
+(.struct UserTypeInfo)
+(.struct ModuleInfo)
+# type definitions
+(.enum _s_0_
+   (NoPos 0)
+   (OtherPos 1)
+   (TopLevel 2)
+   (FieldPos 4)
+   (StmtDeclPos 8)
+   (StmtPos 16)
+   (ExpPos 32)
+)
+# function decls
+(fun printf (. ((.ptr (char :const)) ) ...) (int))
+(fun snprintf (. ((.ptr (char :const)) str) ((size_t) size) ((.ptr (char :const)) format) ...) (int))
+(fun strcmp (. ((.ptr (char :const)) s1) ((.ptr (char :const)) s2)) (int))
+(fun parse_class (. ((.ptr (struct Syntax)) p) ((.ptr (Environ)) env)) (.ptr (struct Syntax)))
+(fun f (.) (.ptr (int)))
+(fun g (. ((.ptr (int)) x)) (void))
+(fun main (.) (int))
+# definitions
+(var global (int) 20)
+(fun f (.) (.ptr (int)) (block
+  (return (addrof global))
+)
+)
+(fun g (. ((.ptr (int)) x)) (void) (block
+  (assign (deref x) 20)
+)
+)
+(fun main (.) (int) (block
+  (assign (deref (call f (.))) 20)
+  (var x$1 (int))
+  (call g (. (addrof x$1)))
+  (return 0)
+)
+)
+# special
+# done

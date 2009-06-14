@@ -1,0 +1,7 @@
+This directory proves a snapshot of zl's generated output, both in "c"
+and "zls".  Both version should produce identical assembly output
+except for "prelude.c" which will only produce identical code with
+"-O".  Any discrepancies are likely a bug and need to be looked into.
+
+run-tests.sh is a quick and dirty shell script to compare the
+assembly output of both versions.

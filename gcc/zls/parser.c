@@ -622,7 +622,7 @@ static tree parse_call(location_t loc) {
   expect(')');
 
   tree call = build_function_call(fun, parms);
-  SET_EXPR_LOCATION(call, loc);
+  protected_set_expr_location(call, loc);
   //if (call == error_mark_node) longjmp(parse_error, 1);
   return call;
 }
@@ -632,7 +632,7 @@ static tree parse_member(location_t loc) {
   token name = parse_id();
   tree id = get_identifier_with_length(name.str, name.len);
   tree exp = build_component_ref(datum, id);
-  SET_EXPR_LOCATION(exp, loc);
+  protected_set_expr_location(exp, loc);
   return exp;
 }
 
@@ -642,7 +642,7 @@ static tree parse_eif(location_t loc) {
   tree if_true = parse_exp_conv();
   tree if_false = parse_exp_conv();
   tree exp = build_conditional_expr (cond, if_true, if_false);
-  SET_EXPR_LOCATION(exp, loc);
+  protected_set_expr_location(exp, loc);
   return exp;
 }
 

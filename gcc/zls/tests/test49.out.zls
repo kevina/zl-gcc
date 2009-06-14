@@ -1,0 +1,73 @@
+# type decls
+(talias FILE (struct _IO_FILE))
+(talias size_t (unsigned-int))
+(talias bool (int))
+(talias EnvironSnapshot (struct EnvironSnapshot))
+(talias Mark (struct Mark))
+(.struct UnmarkedSyntax)
+(.struct Syntax)
+(.struct SyntaxList)
+(.struct SyntaxEnum)
+(.struct Match)
+(talias Context (struct Context))
+(talias Environ (struct Environ))
+(.enum _s_0_)
+(talias Position (enum _s_0_))
+(.struct UserTypeInfo)
+(.struct ModuleInfo)
+(.struct _Data$$1)
+(.struct _Data$$2)
+# type definitions
+(.enum _s_0_
+   (NoPos 0)
+   (OtherPos 1)
+   (TopLevel 2)
+   (FieldPos 4)
+   (StmtDeclPos 8)
+   (StmtPos 16)
+   (ExpPos 32)
+)
+(.struct _Data$$1
+  ((int) x_)
+)
+(.struct _Data$$2
+  ((struct _Data$$1) parent)
+)
+# function decls
+(fun printf (. ((.ptr (char :const)) ) ...) (int))
+(fun snprintf (. ((.ptr (char :const)) str) ((size_t) size) ((.ptr (char :const)) format) ...) (int))
+(fun strcmp (. ((.ptr (char :const)) s1) ((.ptr (char :const)) s2)) (int))
+(fun parse_class (. ((.ptr (struct Syntax)) p) ((.ptr (Environ)) env)) (.ptr (struct Syntax)))
+(fun foo$$1 (.) (int))
+(fun bar$$1 (.) (int))
+(fun main (.) (int))
+# definitions
+(var x$$1 (int) :static)
+(fun foo$$1 (.) (int) (block
+  (return x$$1)
+)
+)
+(var y$$1 (int) :static)
+(fun bar$$1 (.) (int) (block
+  (return y$$1)
+)
+)
+(fun main (.) (int) (block
+  x$$1
+  x$$1
+  y$$1
+  (call foo$$1 (.))
+  (call foo$$1 (.))
+  (call bar$$1 (.))
+  (var x$1 (struct _Data$$1))
+  x$$1
+  (call foo$$1 (.))
+  (var y$1 (struct _Data$$2))
+  x$$1
+  y$$1
+  (call foo$$1 (.))
+  (call bar$$1 (.))
+)
+)
+# special
+# done
