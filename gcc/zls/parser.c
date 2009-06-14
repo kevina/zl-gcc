@@ -623,7 +623,7 @@ static tree parse_call(location_t loc) {
   tree fun = parse_exp();
 
   expect('(');
-  parse_token(); // expect "list"
+  parse_token(); // expect "."
   tree parms = parse_list();
   expect(')');
 
@@ -652,8 +652,8 @@ static tree parse_eif(location_t loc) {
   return exp;
 }
 
-// elist = , = compound_expr
-static tree parse_elist(location_t loc) {
+// seq = , = compound_expr
+static tree parse_seq(location_t loc) {
   abort();
 }
 
@@ -675,33 +675,41 @@ static tree try_exp_bare(location_t loc) {
   return NULL;
 }
 
+static enum tree_code to_binop_code(const token * what) {
+  if (token_eq(*what, "plus"))   return PLUS_EXPR;
+  if (token_eq(*what, "minus"))  return MINUS_EXPR;
+  if (token_eq(*what, "times"))  return MULT_EXPR;
+  if (token_eq(*what, "div"))    return TRUNC_DIV_EXPR;
+  if (token_eq(*what, "lshift")) return LSHIFT_EXPR;
+  if (token_eq(*what, "rshift")) return RSHIFT_EXPR;
+  if (token_eq(*what, "mod"))    return TRUNC_MOD_EXPR;
+  if (token_eq(*what, "bor"))    return BIT_IOR_EXPR;
+  if (token_eq(*what, "xor"))    return BIT_XOR_EXPR;
+  if (token_eq(*what, "band"))   return BIT_AND_EXPR;
+  return NOP_EXPR;
+}
+
 static tree try_exp(location_t loc, const token * what) {
+
   if (token_eq(*what, "id")) return parse_id_exp(loc);
-  if (token_eq(*what, "literal")) return parse_literal(false);
-  if (token_eq(*what, "float"))   return parse_float();
-  if (token_eq(*what, "char"))    return parse_char();
-  if (token_eq(*what, "string"))  return parse_string();
-  if (token_eq(*what, "plus"))   return parse_binop(loc, PLUS_EXPR);
-  if (token_eq(*what, "minus"))  return parse_binop(loc, MINUS_EXPR);
-  if (token_eq(*what, "lshift")) return parse_binop(loc, LSHIFT_EXPR);
-  if (token_eq(*what, "rshift")) return parse_binop(loc, RSHIFT_EXPR);
-  if (token_eq(*what, "times"))  return parse_binop(loc, MULT_EXPR);
-  if (token_eq(*what, "div"))    return parse_binop(loc, TRUNC_DIV_EXPR);
-  if (token_eq(*what, "mod"))    return parse_binop(loc, TRUNC_MOD_EXPR);
-  if (token_eq(*what, "bor"))    return parse_binop(loc, BIT_IOR_EXPR);
-  if (token_eq(*what, "xor"))    return parse_binop(loc, BIT_XOR_EXPR);
-  if (token_eq(*what, "band"))   return parse_binop(loc, BIT_AND_EXPR);
-  if (token_eq(*what, "assign"))    return parse_assign(loc, NOP_EXPR);
-  if (token_eq(*what, "plus_eq"))   return parse_assign(loc, PLUS_EXPR);
-  if (token_eq(*what, "minus_eq"))  return parse_assign(loc, MINUS_EXPR);
-  if (token_eq(*what, "lshift_eq")) return parse_assign(loc, LSHIFT_EXPR);
-  if (token_eq(*what, "rshift_eq")) return parse_assign(loc, RSHIFT_EXPR);
-  if (token_eq(*what, "times_eq"))  return parse_assign(loc, MULT_EXPR);
-  if (token_eq(*what, "div_eq"))    return parse_assign(loc, TRUNC_DIV_EXPR);
-  if (token_eq(*what, "mod_eq"))    return parse_assign(loc, TRUNC_MOD_EXPR);
-  if (token_eq(*what, "bor_eq"))    return parse_assign(loc, BIT_IOR_EXPR);
-  if (token_eq(*what, "xor_eq"))    return parse_assign(loc, BIT_XOR_EXPR);
-  if (token_eq(*what, "band_eq"))   return parse_assign(loc, BIT_AND_EXPR);
+  if (token_eq(*what, "n"))  return parse_literal(false);
+  if (token_eq(*what, "f"))  return parse_float();
+  if (token_eq(*what, "c"))  return parse_char();
+  if (token_eq(*what, "s"))  return parse_string();
+
+  enum tree_code code = to_binop_code(what);
+  if (code != NOP_EXPR) return parse_binop(loc, code);
+
+  if (token_eq(*what, "assign"))
+    return parse_assign(loc, NOP_EXPR);
+  if (token_eq(*what, "c-assign")) {
+    token op = parse_token();
+    code = to_binop_code(&op);
+    if (code == NOP_EXPR)
+      throw_error(op.loc, "Expected binary operator after c-assign.");
+    return parse_assign(loc, code);
+  }
+  
   if (token_eq(*what, "eq")) return parse_binop(loc, EQ_EXPR);
   if (token_eq(*what, "ne")) return parse_binop(loc, NE_EXPR);
   if (token_eq(*what, "lt")) return parse_binop(loc, LT_EXPR);
@@ -712,14 +720,14 @@ static tree try_exp(location_t loc, const token * what) {
   if (token_eq(*what, "postdec"))  return parse_unop(loc, POSTDECREMENT_EXPR);
   if (token_eq(*what, "neg"))      return parse_unop(loc, NEGATE_EXPR);
   if (token_eq(*what, "not"))      return parse_unop(loc, TRUTH_NOT_EXPR);
-  if (token_eq(*what, "complmnt")) return parse_unop(loc, BIT_NOT_EXPR);
+  if (token_eq(*what, "bnot"))     return parse_unop(loc, BIT_NOT_EXPR);
   if (token_eq(*what, "addrof")) return parse_addrof(loc);
   if (token_eq(*what, "deref"))  return parse_deref(loc);
   if (token_eq(*what, "cast")) return parse_cast(loc);
   if (token_eq(*what, "call")) return parse_call(loc);
   if (token_eq(*what, "member")) return parse_member(loc);
   if (token_eq(*what, "eif")) return parse_eif(loc);
-  if (token_eq(*what, "elist")) return parse_elist(loc);
+  if (token_eq(*what, "seq")) return parse_seq(loc);
   if (token_eq(*what, "eblock")) return parse_eblock(loc);
   return NULL;
 }
@@ -738,7 +746,7 @@ static tree parse_exp(void) {
   return res;
 }
 
-static struct c_expr parse_ilist(location_t loc, tree type, bool nested) {
+static struct c_expr parse_init(location_t loc, tree type, bool nested) {
   if (nested)
     push_init_level(0);
   else
@@ -760,8 +768,8 @@ static struct c_expr parse_exp_init(tree type, bool nested) {
   }
   expect('(');
   token what = parse_token();
-  if (token_eq(what, "ilist")) {
-    init = parse_ilist(loc, type, nested);
+  if (token_eq(what, "init")) {
+    init = parse_init(loc, type, nested);
   } else {
     init.value = try_exp(loc, &what);
     if (init.value)
@@ -917,7 +925,7 @@ static void parse_enum(location_t loc) {
     expect('(');
     n = parse_token();
     enum_id = get_identifier_with_length(n.str, n.len);
-    if (*str == '(')
+    if (more_args())
       enum_value = parse_exp();
     expect(')');
 
