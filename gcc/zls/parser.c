@@ -387,22 +387,6 @@ static tree parse_fun_type(void) {
   return build_function_type(ret_type, parms.type);
 }
 
-static tree parse_qualified_type(void) {
-  tree inner = parse_type();
-  int quals = 0;
-  while (*str == ':') {
-    ++str;
-    token q = parse_token();
-    if (token_eq(q, "const"))         quals |= TYPE_QUAL_CONST;
-    else if (token_eq(q, "volatile")) quals |= TYPE_QUAL_VOLATILE;
-    else if (token_eq(q, "restrict")) quals |= TYPE_QUAL_RESTRICT;
-    else throw_error(q.loc, "Unknown qualifier: %.*s", q.len, q.str);
-  }
-  if (quals == 0 || *str != ')')
-    throw_error(make_loc(str), "Expected qualifier.");
-  return c_build_qualified_type(inner, quals);
-}
-
 static tree parse_tagged_type(enum tree_code tag) {
   token id = parse_token();
   //tree type = lookup_tag(tag, get_identifier_with_length(id.str, id.len), false);
@@ -454,8 +438,6 @@ static tree parse_type(void) {
     type = parse_array_type();
   else if (token_eq(name, ".fun"))
     type = parse_fun_type();
-  else if (token_eq(name, ".q"))
-    type = parse_qualified_type();
   else if (token_eq(name, "struct"))
     type = parse_tagged_type(RECORD_TYPE);
   else if (token_eq(name, "enum"))
@@ -469,6 +451,18 @@ static tree parse_type(void) {
     else
       throw_error(name.loc, "Unknown type: %.*s", name.len, name.str);
   }
+
+  int quals = 0;
+  while (*str == ':') {
+    ++str;
+    token q = parse_token();
+    if (token_eq(q, "const"))         quals |= TYPE_QUAL_CONST;
+    else if (token_eq(q, "volatile")) quals |= TYPE_QUAL_VOLATILE;
+    else if (token_eq(q, "restrict")) quals |= TYPE_QUAL_RESTRICT;
+    else throw_error(q.loc, "Unknown qualifier: %.*s", q.len, q.str);
+  }
+  if (quals != 0)
+    type = c_build_qualified_type(type, quals);
   expect(')');
   return type;
 }
@@ -768,7 +762,7 @@ static struct c_expr parse_exp_init(tree type, bool nested) {
   }
   expect('(');
   token what = parse_token();
-  if (token_eq(what, "init")) {
+  if (token_eq(what, ".")) {
     init = parse_init(loc, type, nested);
   } else {
     init.value = try_exp(loc, &what);
