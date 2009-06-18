@@ -208,9 +208,10 @@ static location_t make_loc(const char * str) {
 //
 
 static void spacing(void) {
+  char chr;
   for (;;) {
     while (chartype(*str) == CHAR_SPACE) ++str;
-    char chr = *str;
+    chr = *str;
     if (chr == '\0') {
       break;
     } else if (chartype(chr) == CHAR_EOL) {
@@ -516,7 +517,7 @@ no_inc:
       case 'x': {
         // hex 
         ++s;
-        char * e = (char *)s;
+        char * e = CONST_CAST(char *, s);
         unsigned val = strtol(s, &e, 16);
         if (s == e) abort(); // FIXME: Error
         s = e;
@@ -596,7 +597,9 @@ static tree parse_deref(location_t loc) {
 static tree parse_cast(location_t loc) {
   tree type = parse_type();
   tree exp = parse_exp_conv();
-  return build_c_cast(type, exp);
+  tree cast = build_c_cast(type, exp);
+  protected_set_expr_location(cast, loc);
+  return loc;
 }
 
 static tree parse_unop(location_t loc, enum tree_code code) {

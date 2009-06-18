@@ -44,7 +44,7 @@ zls: zls0$(exeext)
 .PHONY: zls
 
 # Use maximal warnings for this front end.
-zls-warn = $(STRICT_WARN)
+zls-warn = $(LOOSE_WARN)
 
 # The compiler itself.
 # Shared with C front end:
