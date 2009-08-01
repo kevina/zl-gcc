@@ -599,7 +599,7 @@ static tree parse_cast(location_t loc) {
   tree exp = parse_exp_conv();
   tree cast = build_c_cast(type, exp);
   protected_set_expr_location(cast, loc);
-  return loc;
+  return cast;
 }
 
 static tree parse_unop(location_t loc, enum tree_code code) {
