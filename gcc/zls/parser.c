@@ -846,32 +846,36 @@ static void parse_top_level_var(location_t loc) {
   tree decl = build_decl(VAR_DECL, id, type);
   DECL_SOURCE_LOCATION(decl) = loc;
 
-  TREE_STATIC(decl) = 1;
-  TREE_PUBLIC(decl) = 1;
-
   int r;
   token opt;
   tree attrs = NULL;
+  bool have_static = false, have_extern = false;
   while ((r = get_opt(&opt))) {
     if (token_eq(opt, "static")) {
-      TREE_PUBLIC(decl) = 0;
+      have_static = true;
     } else if (token_eq(opt, "extern")) {
-      DECL_EXTERNAL(decl) = 1;
+      have_extern = true;
     } else if (token_prefix(opt, "__")) {
       attrs = parse_attrib(&opt, r > 1, attrs);
     } else {
       throw_error(opt.loc, "Invalid flag for top-level \"var\" declaration: %.*s", opt.len, opt.str);
     }
   }
+  bool need_init = more_args();
+  bool extern_ref = !need_init && have_extern;
+  
+  TREE_PUBLIC(decl) = !have_static;
+  TREE_STATIC(decl) = !extern_ref;
+  DECL_EXTERNAL(decl) = have_extern;
+
   decl_attributes(&decl, attrs, 0);
 
-  bool need_init = more_args();
   tree init = NULL;
 
-  prep_decl(decl, need_init);
+  decl = prep_decl(decl, need_init);
 
   if (need_init)
-    init = parse_var_init(decl, false);
+    init = parse_var_init(decl, true);
 
   finish_decl(decl, init, NULL);
 }
@@ -960,7 +964,7 @@ static void parse_var(location_t loc) {
   bool need_init = more_args();
   tree init = NULL;
 
-  prep_decl(decl, need_init);
+  decl = prep_decl(decl, need_init);
 
   if (need_init)
     init = parse_var_init(decl, false);
@@ -1209,7 +1213,7 @@ static void parse_fun(location_t loc) {
 
   } else {
     
-    prep_decl(fn_decl, false);
+    fn_decl = prep_decl(fn_decl, false);
     finish_decl(fn_decl, NULL, NULL);
 
   }
@@ -1225,7 +1229,7 @@ static void parse_talias(location_t loc) {
   tree type = parse_type();
   tree decl  = build_decl (TYPE_DECL, id, type);
   DECL_SOURCE_LOCATION(decl) = loc;
-  prep_decl(decl, false);
+  decl = prep_decl(decl, false);
   finish_decl(decl, NULL, NULL);
 }
 
