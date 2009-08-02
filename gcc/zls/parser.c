@@ -654,13 +654,11 @@ static tree parse_seq(location_t loc) {
   abort();
 }
 
-static void parse_decl_stmt(void);
+static void parse_stmts(void);
 
 static tree parse_eblock(location_t loc) {
   tree stmt = c_begin_stmt_expr ();
-  while (*str != ')') {
-    parse_decl_stmt();
-  }
+  parse_stmts();
   tree exp = c_finish_stmt_expr (stmt);
   SET_EXPR_LOCATION(exp, loc);
   return exp;
@@ -981,7 +979,7 @@ static void parse_local_label(location_t loc) {
 }
 
 static void parse_block(location_t loc);
-static void parse_slist(location_t loc);
+//static void parse_slist(location_t loc);
 static void parse_stmt(void);
 
 // parse a statement which needs a block around it, for if, switch, etc.
@@ -1035,14 +1033,6 @@ static void parse_case(location_t loc) {
   SET_EXPR_LOCATION(label, loc);
 }
 
-static void parse_w_cleanup(location_t loc) {
-  tree body = parse_block_stmt();
-  tree finally = parse_block_stmt();
-  tree stmt = build_stmt(TRY_FINALLY_EXPR, body, finally);
-  SET_EXPR_LOCATION(stmt, loc);
-  add_stmt(stmt);
-}
-
 static bool try_decl(location_t loc, token * what) {
   if (token_eq(*what, "var"))
     parse_var(loc);
@@ -1072,14 +1062,12 @@ static bool try_stmt(location_t loc, token * what) {
     c_finish_return(parse_exp_conv());
   else if (token_eq(*what, "block"))
     parse_block(loc);
-  else if (token_eq(*what, "slist"))
-    parse_slist(loc);
+  //else if (token_eq(*what, "slist"))
+  //  parse_slist(loc);
   else if (token_eq(*what, "label"))
     parse_label(loc);
   else if (token_eq(*what, "case"))
     parse_case(loc);
-  else if (token_eq(*what, "w/cleanup"))
-    parse_w_cleanup(loc);
   else if (token_eq(*what, "noop"))
     add_stmt(build_empty_stmt());
   else if ((exp = try_exp(loc, what)))
@@ -1087,24 +1075,6 @@ static bool try_stmt(location_t loc, token * what) {
   else 
     return false;
   return true;
-}
-
-static void parse_decl_stmt(void) {
-  location_t loc = make_loc(str);
-  tree exp = try_exp_bare(loc);
-  if (exp) {
-    add_exp_stmt(loc, exp);
-    return;
-  }
-  expect('(');
-  token what = parse_token();
-  bool res;
-  res = try_decl(loc, &what);
-  if (!res)
-    res = try_stmt(loc, &what);
-  if (!res)
-    throw_error(loc, "Expected declaration or statement.");
-  expect(')');
 }
 
 static void parse_stmt(void) {
@@ -1122,23 +1092,53 @@ static void parse_stmt(void) {
   expect(')');
 }
 
+static void parse_stmts(void) {
+  while (*str != ')') {
+    location_t loc = make_loc(str);
+    tree exp = try_exp_bare(loc);
+    if (exp) {
+      add_exp_stmt(loc, exp);
+      continue;
+    }
+    expect('(');
+    token what = parse_token();
+    if (token_eq(what, "cleanup")) {
+      // first parse cleanup part
+      tree cleanup = parse_block_stmt();
+      expect(')');
+      // now parse rest of block, note that we are _not_ nested inside
+      // another stmt, hence we need to break out when we are done
+      tree rest = c_begin_compound_stmt (false);
+      parse_stmts();
+      rest = c_end_compound_stmt (rest, false);
+      tree stmt = build_stmt(TRY_FINALLY_EXPR, rest, cleanup);
+      SET_EXPR_LOCATION(stmt, loc);
+      add_stmt(stmt);
+      return;
+    }
+    bool res;
+    res = try_decl(loc, &what);
+    if (!res)
+      res = try_stmt(loc, &what);
+    if (!res)
+      throw_error(loc, "Expected declaration or statement.");
+    expect(')');
+  }
+}
+
 static void parse_block(location_t loc) {
   tree stmt = c_begin_compound_stmt (true);
-  while (*str != ')') {
-    parse_decl_stmt();
-  }
+  parse_stmts();
   tree block = add_stmt(c_end_compound_stmt (stmt, true));
   SET_EXPR_LOCATION(block, loc);
 }
 
-static void parse_slist(location_t loc) {
-  tree stmt = c_begin_compound_stmt (false);
-  while (*str != ')') {
-    parse_decl_stmt();
-  }
-  tree slist = add_stmt(c_end_compound_stmt (stmt, false));
-  SET_EXPR_LOCATION(slist, loc);
-}
+//static void parse_slist(location_t loc) {
+//  tree stmt = c_begin_compound_stmt (false);
+//  parse_stmts();
+//  tree slist = add_stmt(c_end_compound_stmt (stmt, false));
+//  SET_EXPR_LOCATION(slist, loc);
+//}
 
 static void parse_fun(location_t loc) {
 
