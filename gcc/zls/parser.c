@@ -649,9 +649,11 @@ static tree parse_eif(location_t loc) {
   return exp;
 }
 
-// seq = , = compound_expr
 static tree parse_seq(location_t loc) {
-  abort();
+  tree exp = parse_exp();
+  if (*str == ')') return exp;
+  tree res = parse_seq(loc);
+  return build_compound_expr(exp, res);
 }
 
 static void parse_stmts(void);
@@ -1129,6 +1131,10 @@ static void parse_stmts(void) {
 static void parse_block(location_t loc) {
   tree stmt = c_begin_compound_stmt (true);
   parse_stmts();
+  add_stmt(build_empty_stmt()); 
+  // ^^FIXME: Hack, apparently gcc doesn't like empty blocks, but the
+  //     C front end seams to produce them just fine, need to figure out
+  //     what I am doing differently
   tree block = add_stmt(c_end_compound_stmt (stmt, true));
   SET_EXPR_LOCATION(block, loc);
 }
