@@ -523,8 +523,7 @@ static tree parse_float(void) {
 }
 
 static char * unescape(const char * s, const char * end, char * res) {
-  for (; s != end; ++s)
-no_inc:
+  while (s != end) {
     if (*s == '\\') {
       ++s;
       assert(s != end);
@@ -545,7 +544,7 @@ no_inc:
         s = e;
         if (val > 255) abort(); // FIXME: Error message, out of range 
         *res++ = (char)val;
-        goto no_inc;
+        continue;
       } case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': {
         // oct
         unsigned val = *s - '0'; ++s;
@@ -553,13 +552,15 @@ no_inc:
         if (s != end && '0' <= *s && *s <= '7') {val *= 8; val += *s - '0'; ++s;}
         if (val > 255) abort(); // FIXME: Error message, out of range
         *res++ = (char)val;
-        goto no_inc;
+        continue;
       } default:
         *res++ = *s;
       }
     } else if (*s != '"') {
       *res++ = *s;
     }
+    ++s;
+  }
   return res;
 }
 
