@@ -1061,6 +1061,17 @@ static void parse_goto(location_t loc) {
   SET_EXPR_LOCATION(goto_, loc);
 }
 
+static void parse_return(location_t loc) {
+  tree return_;
+  if (*str != ')') {
+    tree exp = parse_exp_conv();
+    return_ = c_finish_return(exp);
+  } else {
+    return_ = c_finish_return(NULL_TREE);
+  }
+  SET_EXPR_LOCATION(return_, loc);
+}
+
 static void parse_label(location_t loc) {
   token id = parse_token();
   tree tlab = define_label(id.loc, get_identifier_with_length(id.str, id.len));
@@ -1102,7 +1113,7 @@ static bool try_stmt(location_t loc, token * what) {
   else if (token_eq(*what, "goto"))
     parse_goto(loc);
   else if (token_eq(*what, "return"))
-    c_finish_return(parse_exp_conv());
+    parse_return(loc);
   else if (token_eq(*what, "block"))
     parse_block(loc);
   //else if (token_eq(*what, "slist"))
