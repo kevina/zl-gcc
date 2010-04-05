@@ -301,6 +301,28 @@ static token parse_id(void) {
   }
 }
 
+static token try_id(void) {
+  if (chartype(*str) == CHAR_ID) {
+    return try_token();
+  } else if (*str == '(') {
+    const char * orig_pos = str;
+    expect('(');
+    token what = parse_token();
+    if (!token_eq(what, "id"))
+      goto fail;
+    token res = try_token();
+    if (!res.str)
+      goto fail;
+    expect(')');
+    return res;
+  fail:
+    str = orig_pos;
+    return NULL_TOKEN;
+  } else {
+    return NULL_TOKEN;;
+  }
+}
+
 static bool more_args(void) {
   return *str != ')' && *str != ':';
 }
@@ -622,7 +644,20 @@ static tree parse_list(void) {
 }
 
 static tree parse_call(location_t loc) {
-  tree fun = parse_exp();
+  tree fun;
+  token id = try_id();
+  if (token_eq(id, "__builtin_va_arg")) {
+    expect('(');
+    parse_token(); // expect "."
+    tree v = parse_exp_conv();
+    tree t = parse_type();
+    expect(')');
+    return build_va_arg(v,t);
+  } else if (id.len > 0) {
+    fun = build_external_ref(get_identifier_with_length(id.str, id.len), 0, loc);
+  } else {
+    fun = parse_exp();
+  }
 
   expect('(');
   parse_token(); // expect "."
