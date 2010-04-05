@@ -552,12 +552,17 @@ static tree parse_char(void) {
 }
 
 static tree parse_string(void) {
-  token val = parse_token();
-  char tmp[val.len + 1];
-  char * end = unescape(val.str, val.str + val.len, tmp);
-  *end = '\0';
-  size_t len = end - tmp;
-  tree res = build_string(len+1, tmp);
+  token val = try_token();
+  tree res;
+  if (val.len > 0) {
+    char tmp[val.len + 1];
+    char * end = unescape(val.str, val.str + val.len, tmp);
+    *end = '\0';
+    size_t len = end - tmp;
+    res = build_string(len+1, tmp);
+  } else {
+    res = build_string(1, "");
+  }
   TREE_TYPE(res) = char_array_type_node;
   res = fix_string_type(res);
   return res;
@@ -835,6 +840,7 @@ static struct parms parse_fun_parms(void) {
 static tree parse_var_init(tree decl, bool top_level) {
   start_init (decl, NULL, top_level);
   tree init = parse_exp_init(NULL, false).value;
+  if (init) init = default_function_array_conversion(init);
   finish_init();
   return init;
 }
