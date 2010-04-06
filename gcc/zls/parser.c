@@ -1244,6 +1244,7 @@ static void parse_fun(location_t loc) {
   decl_attributes(&fn_decl, attrs, 0);
 
   if (more_args()) {
+    DECL_EXTERNAL(fn_decl) = 0;
     prep_function(fn_decl);
 
     struct c_arg_info arg_info = {NULL, NULL, parms.type, NULL, NULL, 0};
