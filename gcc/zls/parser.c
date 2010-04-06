@@ -396,8 +396,13 @@ static struct parms parse_fun_parms(void);
 
 static tree parse_array_type(void) {
   tree type = parse_type();
-  tree size = build_binary_op(0, MINUS_EXPR, parse_exp(), integer_one_node, 1);
-  return build_array_type(type, build_index_type(size));
+  tree index = NULL;
+  if (more_args()) {
+    tree size = parse_exp();
+    tree last = build_binary_op(0, MINUS_EXPR, size, integer_one_node, 1);
+    index = build_index_type(last);
+  }
+  return build_array_type(type, index);
 }
 
 static tree parse_fun_type(void) {
@@ -708,8 +713,9 @@ static tree parse_eblock(location_t loc) {
 }
  
 static tree try_exp_bare(location_t loc) {
-  if (chartype(*str) == CHAR_ID) return parse_id_exp(loc);
+  if (str[0] == '-' && (chartype(str[1]) & CHAR_NUM)) return parse_literal(true);
   if (chartype(*str) & CHAR_NUM) return parse_literal(true);
+  if (chartype(*str) == CHAR_ID) return parse_id_exp(loc);
   return NULL;
 }
 
@@ -802,6 +808,7 @@ static struct c_expr parse_exp_init(tree type, bool nested) {
   init.value = try_exp_bare(loc);
   if (init.value) {
     init.original_code = TREE_CODE(init.value);
+    init = default_function_array_conversion_on_c_expr(init);
     return init;
   }
   expect('(');
@@ -831,6 +838,9 @@ struct parm {
   token name;
 };
 
+// NOTE: We do not handle arrays (or functions) as parameters as they
+//       are really pointers, and zl should have already done the 
+//       conversion
 static struct parms parse_fun_parms(void) {
   struct parms r = {NULL, 0, NULL};
   expect('(');
@@ -876,7 +886,6 @@ static struct parms parse_fun_parms(void) {
 static tree parse_var_init(tree decl, bool top_level) {
   start_init (decl, NULL, top_level);
   tree init = parse_exp_init(NULL, false).value;
-  if (init) init = default_function_array_conversion(init);
   finish_init();
   return init;
 }
