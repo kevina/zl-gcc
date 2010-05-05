@@ -901,11 +901,16 @@ static void parse_top_level_var(location_t loc) {
   token opt;
   tree attrs = NULL;
   bool have_static = false, have_extern = false;
+  bool have_once = false, have_if_needed = false;
   while ((r = get_opt(&opt))) {
     if (token_eq(opt, "static")) {
       have_static = true;
     } else if (token_eq(opt, "extern")) {
       have_extern = true;
+    } else if (token_eq(opt, "once")) {
+      have_once = true;
+    } else if (token_eq(opt, "if-needed")) {
+      have_if_needed = true;
     } else if (token_prefix(opt, "__")) {
       attrs = parse_attrib(&opt, r > 1, attrs);
     } else {
@@ -918,6 +923,11 @@ static void parse_top_level_var(location_t loc) {
   TREE_PUBLIC(decl) = !have_static;
   TREE_STATIC(decl) = !extern_ref;
   DECL_EXTERNAL(decl) = have_extern;
+
+  if (TREE_PUBLIC(decl)) {
+    if (have_once)      DECL_ONE_ONLY (decl) = 1;
+    if (have_if_needed) DECL_COMDAT   (decl) = 1;
+  }
 
   decl_attributes(&decl, attrs, 0);
 
@@ -1235,6 +1245,15 @@ static void parse_fun(location_t loc) {
       TREE_PUBLIC(fn_decl) = 0;
     } else if (token_eq(opt, "extern")) {
       DECL_EXTERNAL(fn_decl) = 1;
+    } else if (token_eq(opt, "inline")) {
+      //FIXME: What do I do here????
+      DECL_DECLARED_INLINE_P(fn_decl) = 1;
+      DECL_ONE_ONLY (fn_decl) = 1;
+      //DECL_COMDAT(fn_decl) = 1; 
+    } else if (token_eq(opt, "once")) {
+      DECL_ONE_ONLY (fn_decl) = 1;
+    } else if (token_eq(opt, "if-needed")) {
+      DECL_COMDAT (fn_decl) = 1;
     } else if (token_prefix(opt, "__")) {
       attrs = parse_attrib(&opt, r > 1, attrs);
     } else {
