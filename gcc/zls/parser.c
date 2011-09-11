@@ -153,7 +153,7 @@ void c_parse_init (void)
 
 #define BLOCK_SIZE (1024*16)
 
-static void read_soure_file(void) {
+static void read_source_file(void) {
   int fd = STDIN_FILENO;
   if (this_input_filename[0] != '\0')
     fd = open(this_input_filename, O_RDONLY);
@@ -1350,7 +1350,7 @@ static void parse_translation_unit(void) {
 }
 
 void c_parse_file (void) {
-  read_soure_file();
+  read_source_file();
   if (!setjmp(parse_error)) {
     parse_translation_unit();
   } else /* error */ {
