@@ -207,6 +207,20 @@ static location_t make_loc(const char * str) {
 // 
 //
 
+/* __attribute__ ((format (printf, 2, 3))) */
+/* static void throw_note (location_t loc, const char * msg, ...)  */
+/* { */
+/*   diagnostic_info diagnostic; */
+/*   va_list ap; */
+
+/*   va_start (ap, msg); */
+/*   diagnostic_set_info (&diagnostic, msg, &ap, loc, DK_NOTE); */
+/*   report_diagnostic (&diagnostic); */
+/*   va_end (ap); */
+/* } */
+
+static token parse_quote(void);
+static char * unescape(const char * s, const char * end, char * res);
 static void spacing(void) {
   char chr;
   for (;;) {
@@ -224,8 +238,28 @@ static void spacing(void) {
         if (*str == '\n') ++str;
       }
       line_start = str;
+      //throw_note(make_loc(str), "%.20s", str);
     } else if (chr == '#') {
       ++str; 
+      if (str[0] == 'l' && str[1] == 'c' && str[2] == ' ') {
+        str += 3;
+        unsigned line = strtoul(str, (char **)&str, 10);
+        if (line == 0) goto cont;
+        while (chartype(*str) == CHAR_SPACE) ++str;
+        if (*str != '"') goto cont;
+        token fn_ = parse_quote();
+        char * fn = (char *)xmalloc(fn_.len + 1);
+        char * e = unescape(fn_.str, fn_.str + fn_.len, fn);
+        *e = '\0';
+        //fprintf(stderr, "line control: %u %s\n", line, fn);
+        while (chartype(*str) != CHAR_EOL) ++str;
+        if (*str == '\0') break;
+        //++line_num;
+        linemap_add(line_table, LC_RENAME, false, fn, line);
+        line_num = line - 1;
+        continue;
+      }
+    cont:
       while (chartype(*str) != CHAR_EOL) ++str;
     }
     else break;
