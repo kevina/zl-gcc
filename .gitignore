@@ -1,0 +1,6 @@
+mpfr
+gmp
+libstdc++-v3
+gcc/zls/tests/*.s
+gcc/testsuite
+gcc/cp
