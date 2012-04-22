@@ -573,6 +573,9 @@ adjust_return_value_with_ops (enum tree_code code, const char *label,
   gimple stmt = gimple_build_assign_with_ops (code, tmp, op0, op1);
   tree result;
 
+  if (TREE_CODE (ret_type) == COMPLEX_TYPE
+      || TREE_CODE (ret_type) == VECTOR_TYPE)
+    DECL_GIMPLE_REG_P (tmp) = 1;
   add_referenced_var (tmp);
   result = make_ssa_name (tmp, stmt);
   gimple_assign_set_lhs (stmt, result);
@@ -867,6 +870,9 @@ create_tailcall_accumulator (const char *label, basic_block bb, tree init)
   tree tmp = create_tmp_var (ret_type, label);
   gimple phi;
 
+  if (TREE_CODE (ret_type) == COMPLEX_TYPE
+      || TREE_CODE (ret_type) == VECTOR_TYPE)
+    DECL_GIMPLE_REG_P (tmp) = 1;
   add_referenced_var (tmp);
   phi = create_phi_node (tmp, bb);
   /* RET_TYPE can be a float when -ffast-maths is enabled.  */
@@ -914,8 +920,10 @@ tree_optimize_tail_calls_1 (bool opt_tailcalls)
 
       if (!phis_constructed)
 	{
-	  /* Ensure that there is only one predecessor of the block.  */
-	  if (!single_pred_p (first))
+	  /* Ensure that there is only one predecessor of the block
+	     or if there are existing degenerate PHI nodes.  */
+	  if (!single_pred_p (first)
+	      || !gimple_seq_empty_p (phi_nodes (first)))
 	    first = split_edge (single_succ_edge (ENTRY_BLOCK_PTR));
 
 	  /* Copy the args if needed.  */
@@ -943,6 +951,14 @@ tree_optimize_tail_calls_1 (bool opt_tailcalls)
       if (act->mult && !m_acc)
 	m_acc = create_tailcall_accumulator ("mult_acc", first,
 					     integer_one_node);
+    }
+
+  if (a_acc || m_acc)
+    {
+      /* When the tail call elimination using accumulators is performed,
+	 statements adding the accumulated value are inserted at all exits.
+	 This turns all other tail calls to non-tail ones.  */
+      opt_tailcalls = false;
     }
 
   for (; tailcalls; tailcalls = next)

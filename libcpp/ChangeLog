@@ -1,3 +1,71 @@
+2012-03-13  Release Manager
+
+	* GCC 4.4.7 released.
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2011-11-04  Eric Botcazou  <ebotcazou@adacore.com>
+            Jakub Jelinek  <jakub@redhat.com>
+
+	PR preprocessor/39213
+	* directives.c (end_directive): Call _cpp_remove_overlay for deferred
+	pragmas as well in traditional mode.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* init.c (read_original_filename): Don't call read_original_directory
+	if _cpp_handle_directive returns 0.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-11-11  Kai Tietz  <kai.tietz@onevision.com>
+
+	Backported from trunk
+	* directives.c (do_pragma_push_macro): New pragma handler.
+	(do_pragma_pop_macro): Likewise.
+	(_cpp_init_internal_pragmas): Add push_macro and
+	pop_macro handler to internal pragmas.
+	(lex_macro_node_from_str): Removed.
+	(cpp_push_definition): Replace lex_macro_node_from_str
+	by _cpp_lex_identifier.
+	(cpp_pop_definition): Likewise.
+	* internal.h (_cpp_lex_identifier): New prototype.
+	(def_pragma_macro): New structure.
+	(cpp_reader): New member pushed_macros.
+	* lex.c (_cpp_lex_identifier): New function.
+	(lex_identifier_intern): New function.
+	* init.c (cpp_create_reader): Initialize pushed_macros
+	member.
+	(cpp_destroy): Free elements in pushed_macros member.
+	* pch.c (_cpp_save_pushed_macros): New function.
+	(_cpp_restore_pushed_macros): Likewise.
+	(_cpp_restore_pushed_macros): Use _cpp_save_pushed_macros.
+	(cpp_read_state): Use _cpp_restore_pushed_macros.
+
+2009-10-15  Release Manager
+
+	* GCC 4.4.2 released.
+
+2009-09-02  Ian Lance Taylor  <iant@google.com>
+
+	* macro.c (stringify_arg): Escape CPP_WCHAR tokens.
+
+2009-07-22  Release Manager
+
+	* GCC 4.4.1 released.
+
 2009-04-21  Release Manager
 
 	* GCC 4.4.0 released.

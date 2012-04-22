@@ -368,7 +368,8 @@ store_can_be_removed_p (ira_allocno_t src_allocno, ira_allocno_t dest_allocno)
 	   prohibit removal of the store in such complicated case.  */
 	return false;
     }
-  gcc_unreachable ();
+  /* It is actually a loop entry -- do not remove the store.  */
+  return false;
 }
 
 /* Generate and attach moves to the edge E.  This looks at the final
@@ -812,7 +813,8 @@ emit_move_list (move_t list, int freq)
 	}
       else
 	{
-	  cost = ira_register_move_cost[mode][cover_class][cover_class] * freq;
+	  cost = (ira_get_register_move_cost (mode, cover_class, cover_class)
+		  * freq);
 	  ira_shuffle_cost += cost;
 	}
       ira_overall_cost += cost;

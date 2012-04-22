@@ -1,6 +1,6 @@
 /* Convert tree expression to rtl instructions, for GNU compiler.
    Copyright (C) 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -4248,7 +4248,7 @@ expand_assignment (tree to, tree from, bool nontemporal)
       /* Handle expand_expr of a complex value returning a CONCAT.  */
       if (GET_CODE (to_rtx) == CONCAT)
 	{
-	  if (TREE_CODE (TREE_TYPE (from)) == COMPLEX_TYPE)
+	  if (COMPLEX_MODE_P (TYPE_MODE (TREE_TYPE (from))))
 	    {
 	      gcc_assert (bitpos == 0);
 	      result = store_expr (from, to_rtx, false, nontemporal);
@@ -4483,7 +4483,7 @@ store_expr (tree exp, rtx target, int call_param_p, bool nontemporal)
 
       do_pending_stack_adjust ();
       NO_DEFER_POP;
-      jumpifnot (TREE_OPERAND (exp, 0), lab1);
+      jumpifnot (TREE_OPERAND (exp, 0), lab1, -1);
       store_expr (TREE_OPERAND (exp, 1), target, call_param_p,
 		  nontemporal);
       emit_jump_insn (gen_jump (lab2));
@@ -4662,7 +4662,10 @@ store_expr (tree exp, rtx target, int call_param_p, bool nontemporal)
       /* If store_expr stores a DECL whose DECL_RTL(exp) == TARGET,
 	 but TARGET is not valid memory reference, TEMP will differ
 	 from TARGET although it is really the same location.  */
-      && !(alt_rtl && rtx_equal_p (alt_rtl, target))
+      && !(alt_rtl
+	   && rtx_equal_p (alt_rtl, target)
+	   && !side_effects_p (alt_rtl)
+	   && !side_effects_p (target))
       /* If there's nothing to copy, don't bother.  Don't call
 	 expr_size unless necessary, because some front-ends (C++)
 	 expr_size-hook must not be given objects that are not
@@ -5503,7 +5506,7 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size)
 		    /* Generate a conditional jump to exit the loop.  */
 		    exit_cond = build2 (LT_EXPR, integer_type_node,
 					index, hi_index);
-		    jumpif (exit_cond, loop_end);
+		    jumpif (exit_cond, loop_end, -1);
 
 		    /* Update the loop counter, and jump to the head of
 		       the loop.  */
@@ -7806,6 +7809,33 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 			  || mode1 == BLKmode
 			  || bitpos + bitsize > GET_MODE_BITSIZE (mode2));
 
+	/* Handle CONCAT first.  */
+	if (GET_CODE (op0) == CONCAT && !must_force_mem)
+	  {
+	    if (bitpos == 0
+		&& bitsize == GET_MODE_BITSIZE (GET_MODE (op0)))
+	      return op0;
+	    if (bitpos == 0
+		&& bitsize == GET_MODE_BITSIZE (GET_MODE (XEXP (op0, 0)))
+		&& bitsize)
+	      {
+		op0 = XEXP (op0, 0);
+		mode2 = GET_MODE (op0);
+	      }
+	    else if (bitpos == GET_MODE_BITSIZE (GET_MODE (XEXP (op0, 0)))
+		     && bitsize == GET_MODE_BITSIZE (GET_MODE (XEXP (op0, 1)))
+		     && bitpos
+		     && bitsize)
+	      {
+		op0 = XEXP (op0, 1);
+		bitpos = 0;
+		mode2 = GET_MODE (op0);
+	      }
+	    else
+	      /* Otherwise force into memory.  */
+	      must_force_mem = 1;
+	  }
+
 	/* If this is a constant, put it in a register if it is a legitimate
 	   constant and we don't need a memory reference.  */
 	if (CONSTANT_P (op0)
@@ -7877,16 +7907,6 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	      op0 = copy_rtx (op0);
 
 	    MEM_VOLATILE_P (op0) = 1;
-	  }
-
-	/* The following code doesn't handle CONCAT.
-	   Assume only bitpos == 0 can be used for CONCAT, due to
-	   one element arrays having the same mode as its element.  */
-	if (GET_CODE (op0) == CONCAT)
-	  {
-	    gcc_assert (bitpos == 0
-			&& bitsize == GET_MODE_BITSIZE (GET_MODE (op0)));
-	    return op0;
 	  }
 
 	/* In cases where an aligned union has an unaligned object
@@ -8257,11 +8277,20 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
       /* If neither mode is BLKmode, and both modes are the same size
 	 then we can use gen_lowpart.  */
       else if (mode != BLKmode && GET_MODE (op0) != BLKmode
-	       && GET_MODE_SIZE (mode) == GET_MODE_SIZE (GET_MODE (op0)))
+	       && GET_MODE_SIZE (mode) == GET_MODE_SIZE (GET_MODE (op0))
+	       && !COMPLEX_MODE_P (GET_MODE (op0)))
 	{
 	  if (GET_CODE (op0) == SUBREG)
 	    op0 = force_reg (GET_MODE (op0), op0);
-	  op0 = gen_lowpart (mode, op0);
+	  temp = gen_lowpart_common (mode, op0);
+	  if (temp)
+	    op0 = temp;
+	  else
+	    {
+	      if (!REG_P (op0) && !MEM_P (op0))
+		op0 = force_reg (GET_MODE (op0), op0);
+	      op0 = gen_lowpart (mode, op0);
+	    }
 	}
       /* If both modes are integral, then we can convert from one to the
 	 other.  */
@@ -8296,10 +8325,32 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	 results.  */
       if (MEM_P (op0))
 	{
+	  enum insn_code icode;
 	  op0 = copy_rtx (op0);
 
 	  if (TYPE_ALIGN_OK (type))
 	    set_mem_align (op0, MAX (MEM_ALIGN (op0), TYPE_ALIGN (type)));
+	  else if (mode != BLKmode
+		   && MEM_ALIGN (op0) < GET_MODE_ALIGNMENT (mode)
+		   /* If the target does have special handling for unaligned
+		      loads of mode then use them.  */
+		   && ((icode = optab_handler (movmisalign_optab,
+					       mode)->insn_code)
+		       != CODE_FOR_nothing))
+	      {
+		rtx reg, insn;
+
+		op0 = adjust_address (op0, mode, 0);
+		/* We've already validated the memory, and we're creating a
+		   new pseudo destination.  The predicates really can't
+		   fail.  */
+		reg = gen_reg_rtx (mode);
+
+		/* Nor can the insn generator.  */
+		insn = GEN_FCN (icode) (reg, op0);
+		emit_insn (insn);
+		return reg;
+	      }
 	  else if (STRICT_ALIGNMENT
 		   && mode != BLKmode
 		   && MEM_ALIGN (op0) < GET_MODE_ALIGNMENT (mode))
@@ -8956,7 +9007,8 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 
 	temp = gen_label_rtx ();
 	do_compare_rtx_and_jump (target, cmpop1, comparison_code,
-				 unsignedp, mode, NULL_RTX, NULL_RTX, temp);
+				 unsignedp, mode, NULL_RTX, NULL_RTX, temp,
+				 -1);
       }
       emit_move_insn (target, op1);
       emit_label (temp);
@@ -9061,10 +9113,12 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	  /* If temp is constant, we can just compute the result.  */
 	  if (GET_CODE (temp) == CONST_INT)
 	    {
-	      if (INTVAL (temp) != 0)
-	        emit_move_insn (target, const1_rtx);
-	      else
+	      if (INTVAL (temp) == 0)
 	        emit_move_insn (target, const0_rtx);
+	      else if (TYPE_PRECISION (type) == 1 && !TYPE_UNSIGNED (type))
+		emit_move_insn (target, constm1_rtx);
+	      else
+	        emit_move_insn (target, const1_rtx);
 
 	      return target;
 	    }
@@ -9081,7 +9135,9 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	  op1 = gen_label_rtx ();
 	  emit_cmp_and_jump_insns (temp, const0_rtx, EQ, NULL_RTX,
 				   GET_MODE (temp), unsignedp, op1);
-	  emit_move_insn (temp, const1_rtx);
+	  emit_move_insn (temp,
+			  TYPE_PRECISION (type) == 1 && !TYPE_UNSIGNED (type)
+			  ? constm1_rtx : const1_rtx);
 	  emit_label (op1);
 	  return temp;
 	}
@@ -9107,10 +9163,12 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	emit_move_insn (target, const0_rtx);
 
       op1 = gen_label_rtx ();
-      jumpifnot (exp, op1);
+      jumpifnot (exp, op1, -1);
 
       if (target)
-	emit_move_insn (target, const1_rtx);
+	emit_move_insn (target,
+			TYPE_PRECISION (type) == 1 && !TYPE_UNSIGNED (type)
+			? constm1_rtx : const1_rtx);
 
       emit_label (op1);
       return ignore ? const0_rtx : target;
@@ -9176,7 +9234,7 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
        NO_DEFER_POP;
        op0 = gen_label_rtx ();
        op1 = gen_label_rtx ();
-       jumpifnot (TREE_OPERAND (exp, 0), op0);
+       jumpifnot (TREE_OPERAND (exp, 0), op0, -1);
        store_expr (TREE_OPERAND (exp, 1), temp,
  		  modifier == EXPAND_STACK_PARM,
 		  false);
@@ -9222,7 +9280,7 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	    int value = TREE_CODE (rhs) == BIT_IOR_EXPR;
 	    do_jump (TREE_OPERAND (rhs, 1),
 		     value ? label : 0,
-		     value ? 0 : label);
+		     value ? 0 : label, -1);
 	    expand_assignment (lhs, build_int_cst (TREE_TYPE (rhs), value),
 			       MOVE_NONTEMPORAL (exp));
 	    do_pending_stack_adjust ();
@@ -9705,7 +9763,7 @@ do_store_flag (tree exp, rtx target, enum machine_mode mode, int only_cheap)
   rtx op0, op1;
   enum insn_code icode;
   rtx subtarget = target;
-  rtx result, label;
+  rtx result, label, trueval = const1_rtx;
 
   /* If this is a TRUTH_NOT_EXPR, set a flag indicating we must invert the
      result at the end.  We can't simply invert the test since it would
@@ -9835,7 +9893,9 @@ do_store_flag (tree exp, rtx target, enum machine_mode mode, int only_cheap)
 
   if ((code == NE || code == EQ)
       && TREE_CODE (arg0) == BIT_AND_EXPR && integer_zerop (arg1)
-      && integer_pow2p (TREE_OPERAND (arg0, 1)))
+      && integer_pow2p (TREE_OPERAND (arg0, 1))
+      && (TYPE_PRECISION (TREE_TYPE (exp)) != 1
+	  || TYPE_UNSIGNED (TREE_TYPE (exp))))
     {
       tree type = lang_hooks.types.type_for_mode (mode, unsignedp);
       return expand_expr (fold_single_bit_test (code == NE ? NE_EXPR : EQ_EXPR,
@@ -9887,13 +9947,18 @@ do_store_flag (tree exp, rtx target, enum machine_mode mode, int only_cheap)
   if (target == 0)
     target = gen_reg_rtx (mode);
 
+  if (TYPE_PRECISION (TREE_TYPE (exp)) == 1
+      && !TYPE_UNSIGNED (TREE_TYPE (exp)))
+    trueval = constm1_rtx;
+
   result = emit_store_flag (target, code, op0, op1,
-			    operand_mode, unsignedp, 1);
+			    operand_mode, unsignedp,
+			    trueval == const1_rtx ? 1 : -1);
 
   if (result)
     {
       if (invert)
-	result = expand_binop (mode, xor_optab, result, const1_rtx,
+	result = expand_binop (mode, xor_optab, result, trueval,
 			       result, 0, OPTAB_LIB_WIDEN);
       return result;
     }
@@ -9903,12 +9968,12 @@ do_store_flag (tree exp, rtx target, enum machine_mode mode, int only_cheap)
       || reg_mentioned_p (target, op0) || reg_mentioned_p (target, op1))
     target = gen_reg_rtx (GET_MODE (target));
 
-  emit_move_insn (target, invert ? const0_rtx : const1_rtx);
+  emit_move_insn (target, invert ? const0_rtx : trueval);
   label = gen_label_rtx ();
   do_compare_rtx_and_jump (op0, op1, code, unsignedp, operand_mode, NULL_RTX,
-			   NULL_RTX, label);
+			   NULL_RTX, label, -1);
 
-  emit_move_insn (target, invert ? const1_rtx : const0_rtx);
+  emit_move_insn (target, invert ? trueval : const0_rtx);
   emit_label (label);
 
   return target;

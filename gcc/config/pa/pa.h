@@ -332,8 +332,9 @@ typedef struct machine_function GTY(())
 #define BIGGEST_ALIGNMENT (2 * BITS_PER_WORD)
 
 /* Get around hp-ux assembler bug, and make strcpy of constants fast.  */
-#define CONSTANT_ALIGNMENT(CODE, TYPEALIGN) \
-  ((TYPEALIGN) < 32 ? 32 : (TYPEALIGN))
+#define CONSTANT_ALIGNMENT(EXP, ALIGN)		\
+  (TREE_CODE (EXP) == STRING_CST		\
+   && (ALIGN) < BITS_PER_WORD ? BITS_PER_WORD : (ALIGN))
 
 /* Make arrays of chars word-aligned for the same reasons.  */
 #define DATA_ALIGNMENT(TYPE, ALIGN)		\
@@ -1069,6 +1070,9 @@ extern int may_call_alloca;
    && (NEW_HP_ASSEMBLER						\
        || TARGET_GAS						\
        || GET_CODE (X) != LABEL_REF)				\
+   && (!PA_SYMBOL_REF_TLS_P (X)					\
+       || (SYMBOL_REF_TLS_MODEL (X) != TLS_MODEL_GLOBAL_DYNAMIC		\
+	   && SYMBOL_REF_TLS_MODEL (X) != TLS_MODEL_LOCAL_DYNAMIC))	\
    && (!TARGET_64BIT						\
        || GET_CODE (X) != CONST_DOUBLE)				\
    && (!TARGET_64BIT						\
@@ -1338,9 +1342,7 @@ extern int may_call_alloca;
 	       || ((MODE) != SFmode					\
 		   && (MODE) != DFmode)))				\
     goto ADDR;								\
-  else if (GET_CODE (X) == LABEL_REF					\
-	   || (GET_CODE (X) == CONST_INT				\
-	       && INT_5_BITS (X)))					\
+  else if (GET_CODE (X) == CONST_INT && INT_5_BITS (X))			\
     goto ADDR;								\
   /* Needed for -fPIC */						\
   else if (GET_CODE (X) == LO_SUM					\
@@ -1565,6 +1567,7 @@ do { 									\
    Other copies are reasonably cheap.  */
 #define REGISTER_MOVE_COST(MODE, CLASS1, CLASS2) \
  (CLASS1 == SHIFT_REGS ? 0x100					\
+  : CLASS2 == SHIFT_REGS && FP_REG_CLASS_P (CLASS1) ? 18	\
   : FP_REG_CLASS_P (CLASS1) && ! FP_REG_CLASS_P (CLASS2) ? 16	\
   : FP_REG_CLASS_P (CLASS2) && ! FP_REG_CLASS_P (CLASS1) ? 16	\
   : 2)

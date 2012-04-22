@@ -1,3 +1,55 @@
+2012-03-13  Release Manager
+
+	* GCC 4.4.7 released.
+
+2011-08-23  Uros Bizjak  <ubizjak@gmail.com>
+
+	* config/i386/64/sfp-machine.h (ASM_INVALID): New define.
+	(ASM_DIVZERO): Ditto.
+	(FP_HANLDE_EXCEPTIONS): Use ASM_INVALID and ASM_DIVZERO.
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-05-19  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* config/i386/32/sfp-machine.h (FP_HANDLE_EXCEPTIONS): Support Sun
+	assembler syntax.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-04-08  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-03-22  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR target/38085
+	* config/i386/t-sol2 ($(T)gmon.o): Use CFLAGS instead of
+	MULTILIB_CFLAGS.
+	($(T)gcrt1.o): Likewise.
+	($(T)crt1.o): Likewise.
+	($(T)crti.o): Likewise.
+	($(T)crtn.o): Likewise.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-10-15  Release Manager
+
+	* GCC 4.4.2 released.
+
+2009-07-22  Release Manager
+
+	* GCC 4.4.1 released.
+
 2009-04-21  Release Manager
 
 	* GCC 4.4.0 released.

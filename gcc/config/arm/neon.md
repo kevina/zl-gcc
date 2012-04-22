@@ -667,7 +667,7 @@
           (match_operand:SI 2 "immediate_operand" "i")))]
   "TARGET_NEON"
 {
-  int elt = ffs ((int) INTVAL (operands[2]) - 1);
+  int elt = ffs ((int) INTVAL (operands[2])) - 1;
   if (BYTES_BIG_ENDIAN)
     elt = GET_MODE_NUNITS (<MODE>mode) - 1 - elt;
   operands[2] = GEN_INT (elt);
@@ -3611,7 +3611,8 @@
 			  UNSPEC_VSHLL_N))]
   "TARGET_NEON"
 {
-  neon_const_bounds (operands[2], 0, neon_element_bits (<MODE>mode));
+  /* The boundaries are: 0 < imm <= size.  */
+  neon_const_bounds (operands[2], 0, neon_element_bits (<MODE>mode) + 1);
   return "vshll.%T3%#<V_sz_elem>\t%q0, %P1, %2";
 }
   [(set_attr "neon_type" "neon_shift_1")]

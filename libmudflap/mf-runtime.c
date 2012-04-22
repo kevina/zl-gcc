@@ -1,5 +1,5 @@
 /* Mudflap: narrow-pointer bounds-checking by tree rewriting.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2008, 2009
+   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2010
    Free Software Foundation, Inc.
    Contributed by Frank Ch. Eigler <fche@redhat.com>
    and Graydon Hoare <graydon@redhat.com>
@@ -440,7 +440,7 @@ __mf_usage ()
 
   fprintf (stderr,
            "This is a %s%sGCC \"mudflap\" memory-checked binary.\n"
-           "Mudflap is Copyright (C) 2002-2009 Free Software Foundation, Inc.\n"
+           "Mudflap is Copyright (C) 2002-2010 Free Software Foundation, Inc.\n"
            "\n"
            "The mudflap code can be controlled by an environment variable:\n"
            "\n"
@@ -694,6 +694,12 @@ __mf_init ()
   /* Return if initialization has already been done. */
   if (LIKELY (__mf_starting_p == 0))
     return;
+
+#if defined(__FreeBSD__) && defined(LIBMUDFLAPTH)
+  pthread_self();
+  LOCKTH ();
+  UNLOCKTH ();
+#endif /* Prime mutex which calls calloc upon first lock to avoid deadlock. */
 
   /* This initial bootstrap phase requires that __mf_starting_p = 1. */
 #ifdef PIC

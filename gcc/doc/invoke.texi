@@ -456,7 +456,7 @@ Objective-C and Objective-C++ Dialects}.
 -mfix-cortex-m3-ldrd}
 
 @emph{AVR Options}
-@gccoptlist{-mmcu=@var{mcu}  -msize  -minit-stack=@var{n}  -mno-interrupts @gol
+@gccoptlist{-mmcu=@var{mcu}  -msize  -mno-interrupts @gol
 -mcall-prologues  -mno-tablejump  -mtiny-stack  -mint8}
 
 @emph{Blackfin Options}
@@ -587,6 +587,10 @@ Objective-C and Objective-C++ Dialects}.
 -mcmodel=@var{code-model} @gol
 -m32  -m64 -mlarge-data-threshold=@var{num} @gol
 -mfused-madd -mno-fused-madd -msse2avx}
+
+@emph{i386 and x86-64 Windows Options}
+@gccoptlist{-mconsole -mcygwin -mno-cygwin -mdll
+-mnop-fun-dllimport -mthread -mwin32 -mwindows}
 
 @emph{IA-64 Options}
 @gccoptlist{-mbig-endian  -mlittle-endian  -mgnu-as  -mgnu-ld  -mno-pic @gol
@@ -824,10 +828,6 @@ See RS/6000 and PowerPC Options.
 
 @emph{x86-64 Options}
 See i386 and x86-64 Options.
-
-@emph{i386 and x86-64 Windows Options}
-@gccoptlist{-mconsole -mcygwin -mno-cygwin -mdll
--mnop-fun-dllimport -mthread -mwin32 -mwindows}
 
 @emph{Xstormy16 Options}
 @gccoptlist{-msim}
@@ -1733,6 +1733,27 @@ two definitions were merged.
 
 This option is no longer useful on most targets, now that support has
 been added for putting variables into BSS without making them common.
+
+@item -fno-deduce-init-list
+@opindex fno-deduce-init-list
+Disable deduction of a template type parameter as
+std::initializer_list from a brace-enclosed initializer list, i.e.
+
+@smallexample
+template <class T> auto forward(T t) -> decltype (realfn (t))
+@{
+  return realfn (t);
+@}
+
+void f()
+@{
+  forward(@{1,2@}); // call forward<std::initializer_list<int>>
+@}
+@end smallexample
+
+This option is present because this deduction is an extension to the
+current specification in the C++0x working draft, and there was
+some concern about potential overload resolution problems.
 
 @item -ffriend-injection
 @opindex ffriend-injection
@@ -5408,7 +5429,8 @@ invoking @option{-O2} on programs that use computed gotos.
 Optimize yet more.  @option{-O3} turns on all optimizations specified
 by @option{-O2} and also turns on the @option{-finline-functions},
 @option{-funswitch-loops}, @option{-fpredictive-commoning},
-@option{-fgcse-after-reload} and @option{-ftree-vectorize} options.
+@option{-fgcse-after-reload}, @option{-ftree-vectorize} and
+@option{-fipa-cp-clone} options.
 
 @item -O0
 @opindex O0
@@ -6099,7 +6121,7 @@ Enabled by default at @option{-O} and higher.
 @opindex fipa-struct-reorg
 Perform structure reorganization optimization, that change C-like structures 
 layout in order to better utilize spatial locality.  This transformation is 
-affective for programs containing arrays of structures.  Available in two 
+effective for programs containing arrays of structures.  Available in two 
 compilation modes: profile-based (enabled with @option{-fprofile-generate})
 or static (which uses built-in heuristics).  Require @option{-fipa-type-escape}
 to provide the safety of this transformation.  It works only in whole program
@@ -6513,7 +6535,7 @@ Enabled at levels @option{-O2}, @option{-O3}, @option{-Os}.
 
 @item -fstrict-aliasing
 @opindex fstrict-aliasing
-Allows the compiler to assume the strictest aliasing rules applicable to
+Allow the compiler to assume the strictest aliasing rules applicable to
 the language being compiled.  For C (and C++), this activates
 optimizations based on the type of expressions.  In particular, an
 object of one type is assumed never to reside at the same address as an
@@ -6530,7 +6552,7 @@ union a_union @{
 @};
 
 int f() @{
-  a_union t;
+  union a_union t;
   t.d = 3.0;
   return t.i;
 @}
@@ -6543,7 +6565,7 @@ expected.  @xref{Structures unions enumerations and bit-fields
 implementation}.  However, this code might not:
 @smallexample
 int f() @{
-  a_union t;
+  union a_union t;
   int* ip;
   t.d = 3.0;
   ip = &t.i;
@@ -7396,6 +7418,9 @@ The maximum number of insns of a completely peeled loop.
 @item max-completely-peel-times
 The maximum number of iterations of a loop to be suitable for complete peeling.
 
+@item max-completely-peel-loop-nest-depth
+The maximum depth of a loop nest suitable for complete peeling.
+
 @item max-unswitch-insns
 The maximum number of insns of an unswitched loop.
 
@@ -7796,6 +7821,7 @@ they cause the preprocessor output to be unsuitable for actual
 compilation.
 
 @table @gcctabopt
+@item -Wp,@var{option}
 @opindex Wp
 You can use @option{-Wp,@var{option}} to bypass the compiler driver
 and pass @var{option} directly through to the preprocessor.  If
@@ -7808,7 +7834,7 @@ you should avoid using @option{-Wp} and let the driver handle the
 options instead.
 
 @item -Xpreprocessor @var{option}
-@opindex preprocessor
+@opindex Xpreprocessor
 Pass @var{option} as an option to the preprocessor.  You can use this to
 supply system-specific preprocessor options which GCC does not know how to
 recognize.
@@ -9276,11 +9302,6 @@ atmega64, atmega128, at43usb355, at94k).
 @item -msize
 @opindex msize
 Output instruction sizes to the asm file.
-
-@item -minit-stack=@var{N}
-@opindex minit-stack
-Specify the initial stack address, which may be a symbol or numeric value,
-@samp{__stack} is the default.
 
 @item -mno-interrupts
 @opindex mno-interrupts
@@ -11529,6 +11550,71 @@ be statically or dynamically linked.
 Generate code for the large model: This model makes no assumptions
 about addresses and sizes of sections.
 @end table
+
+@node i386 and x86-64 Windows Options
+@subsection i386 and x86-64 Windows Options
+@cindex i386 and x86-64 Windows Options
+
+These additional options are available for Windows targets:
+
+@table @gcctabopt
+@item -mconsole
+@opindex mconsole
+This option is available for Cygwin and MinGW targets.  It
+specifies that a console application is to be generated, by
+instructing the linker to set the PE header subsystem type
+required for console applications.
+This is the default behaviour for Cygwin and MinGW targets.
+
+@item -mcygwin
+@opindex mcygwin
+This option is available for Cygwin targets.  It specifies that
+the Cygwin internal interface is to be used for predefined
+preprocessor macros, C runtime libraries and related linker
+paths and options.  For Cygwin targets this is the default behaviour.
+This option is deprecated and will be removed in a future release.
+
+@item -mno-cygwin
+@opindex mno-cygwin
+This option is available for Cygwin targets.  It specifies that
+the MinGW internal interface is to be used instead of Cygwin's, by
+setting MinGW-related predefined macros and linker paths and default
+library options.
+This option is deprecated and will be removed in a future release.
+
+@item -mdll
+@opindex mdll
+This option is available for Cygwin and MinGW targets.  It
+specifies that a DLL - a dynamic link library - is to be
+generated, enabling the selection of the required runtime
+startup object and entry point.
+
+@item -mnop-fun-dllimport
+@opindex mnop-fun-dllimport
+This option is available for Cygwin and MinGW targets.  It
+specifies that the dllimport attribute should be ignored.
+
+@item -mthread
+@opindex mthread
+This option is available for MinGW targets. It specifies
+that MinGW-specific thread support is to be used.
+
+@item -mwin32
+@opindex mwin32
+This option is available for Cygwin and MinGW targets.  It
+specifies that the typical Windows pre-defined macros are to
+be set in the pre-processor, but does not influence the choice
+of runtime library/startup code.
+
+@item -mwindows
+@opindex mwindows
+This option is available for Cygwin and MinGW targets.  It
+specifies that a GUI application is to be generated by
+instructing the linker to set the PE header subsystem type
+appropriately.
+@end table
+
+See also under @ref{i386 and x86-64 Options} for standard options.
 
 @node IA-64 Options
 @subsection IA-64 Options
@@ -15471,71 +15557,6 @@ is defined for compatibility with Diab.
 @cindex x86-64 options
 
 These are listed under @xref{i386 and x86-64 Options}.
-
-@node i386 and x86-64 Windows Options
-@subsection i386 and x86-64 Windows Options
-@cindex i386 and x86-64 Windows Options
-
-These additional options are available for Windows targets:
-
-@table @gcctabopt
-@item -mconsole
-@opindex mconsole
-This option is available for Cygwin and MinGW targets.  It
-specifies that a console application is to be generated, by
-instructing the linker to set the PE header subsystem type
-required for console applications.
-This is the default behaviour for Cygwin and MinGW targets.
-
-@item -mcygwin
-@opindex mcygwin
-This option is available for Cygwin targets.  It specifies that
-the Cygwin internal interface is to be used for predefined
-preprocessor macros, C runtime libraries and related linker
-paths and options.  For Cygwin targets this is the default behaviour.
-This option is deprecated and will be removed in a future release.
-
-@item -mno-cygwin
-@opindex mno-cygwin
-This option is available for Cygwin targets.  It specifies that
-the MinGW internal interface is to be used instead of Cygwin's, by
-setting MinGW-related predefined macros and linker paths and default
-library options.
-This option is deprecated and will be removed in a future release.
-
-@item -mdll
-@opindex mdll
-This option is available for Cygwin and MinGW targets.  It
-specifies that a DLL - a dynamic link library - is to be
-generated, enabling the selection of the required runtime
-startup object and entry point.
-
-@item -mnop-fun-dllimport
-@opindex mnop-fun-dllimport
-This option is available for Cygwin and MinGW targets.  It
-specifies that the dllimport attribute should be ignored.
-
-@item -mthread
-@opindex mthread
-This option is available for MinGW targets. It specifies
-that MinGW-specific thread support is to be used.
-
-@item -mwin32
-@opindex mwin32
-This option is available for Cygwin and MinGW targets.  It
-specifies that the typical Windows pre-defined macros are to
-be set in the pre-processor, but does not influence the choice
-of runtime library/startup code.
-
-@item -mwindows
-@opindex mwindows
-This option is available for Cygwin and MinGW targets.  It
-specifies that a GUI application is to be generated by
-instructing the linker to set the PE header subsystem type
-appropriately.
-@end table
-
-See also under @ref{i386 and x86-64 Options} for standard options.
 
 @node Xstormy16 Options
 @subsection Xstormy16 Options

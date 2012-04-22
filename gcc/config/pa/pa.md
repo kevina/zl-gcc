@@ -3191,6 +3191,40 @@
     DONE;
 }")
 
+;; Handle HImode input reloads requiring a general register as a
+;; scratch register.
+(define_expand "reload_inhi"
+  [(set (match_operand:HI 0 "register_operand" "=Z")
+	(match_operand:HI 1 "non_hard_reg_operand" ""))
+   (clobber (match_operand:HI 2 "register_operand" "=&r"))]
+  ""
+  "
+{
+  if (emit_move_sequence (operands, HImode, operands[2]))
+    DONE;
+
+  /* We don't want the clobber emitted, so handle this ourselves.  */
+  emit_insn (gen_rtx_SET (VOIDmode, operands[0], operands[1]));
+  DONE;
+}")
+
+;; Handle HImode output reloads requiring a general register as a
+;; scratch register.
+(define_expand "reload_outhi"
+  [(set (match_operand:HI 0 "non_hard_reg_operand" "")
+	(match_operand:HI 1  "register_operand" "Z"))
+   (clobber (match_operand:HI 2 "register_operand" "=&r"))]
+  ""
+  "
+{
+  if (emit_move_sequence (operands, HImode, operands[2]))
+    DONE;
+
+  /* We don't want the clobber emitted, so handle this ourselves.  */
+  emit_insn (gen_rtx_SET (VOIDmode, operands[0], operands[1]));
+  DONE;
+}")
+
 (define_insn ""
   [(set (match_operand:HI 0 "move_dest_operand"
 	 		  "=r,r,r,r,r,Q,!*q,!r")
@@ -3313,6 +3347,40 @@
 {
   if (emit_move_sequence (operands, QImode, 0))
     DONE;
+}")
+
+;; Handle QImode input reloads requiring a general register as a
+;; scratch register.
+(define_expand "reload_inqi"
+  [(set (match_operand:QI 0 "register_operand" "=Z")
+	(match_operand:QI 1 "non_hard_reg_operand" ""))
+   (clobber (match_operand:QI 2 "register_operand" "=&r"))]
+  ""
+  "
+{
+  if (emit_move_sequence (operands, QImode, operands[2]))
+    DONE;
+
+  /* We don't want the clobber emitted, so handle this ourselves.  */
+  emit_insn (gen_rtx_SET (VOIDmode, operands[0], operands[1]));
+  DONE;
+}")
+
+;; Handle QImode output reloads requiring a general register as a
+;; scratch register.
+(define_expand "reload_outqi"
+  [(set (match_operand:QI 0 "non_hard_reg_operand" "")
+	(match_operand:QI 1  "register_operand" "Z"))
+   (clobber (match_operand:QI 2 "register_operand" "=&r"))]
+  ""
+  "
+{
+  if (emit_move_sequence (operands, QImode, operands[2]))
+    DONE;
+
+  /* We don't want the clobber emitted, so handle this ourselves.  */
+  emit_insn (gen_rtx_SET (VOIDmode, operands[0], operands[1]));
+  DONE;
 }")
 
 (define_insn ""
@@ -3480,7 +3548,7 @@
 
   size = INTVAL (operands[2]);
   align = INTVAL (operands[3]);
-  align = align > 4 ? 4 : align;
+  align = align > 4 ? 4 : (align ? align : 1);
 
   /* If size/alignment is large, then use the library routines.  */
   if (size / align > 16)
@@ -3668,7 +3736,7 @@
 
   size = INTVAL (operands[2]);
   align = INTVAL (operands[3]);
-  align = align > 8 ? 8 : align;
+  align = align > 8 ? 8 : (align ? align : 1);
 
   /* If size/alignment is large, then use the library routines.  */
   if (size / align > 16)
@@ -6068,7 +6136,7 @@
 (define_expand "iordi3"
   [(set (match_operand:DI 0 "register_operand" "")
 	(ior:DI (match_operand:DI 1 "register_operand" "")
-		(match_operand:DI 2 "ior_operand" "")))]
+		(match_operand:DI 2 "reg_or_cint_ior_operand" "")))]
   ""
   "
 {
@@ -6089,7 +6157,7 @@
 (define_insn ""
   [(set (match_operand:DI 0 "register_operand" "=r,r")
 	(ior:DI (match_operand:DI 1 "register_operand" "0,0")
-		(match_operand:DI 2 "ior_operand" "M,i")))]
+		(match_operand:DI 2 "cint_ior_operand" "M,i")))]
   "TARGET_64BIT"
   "* return output_64bit_ior (operands); "
   [(set_attr "type" "binary,shift")
@@ -6108,19 +6176,14 @@
 (define_expand "iorsi3"
   [(set (match_operand:SI 0 "register_operand" "")
 	(ior:SI (match_operand:SI 1 "register_operand" "")
-		(match_operand:SI 2 "arith32_operand" "")))]
+		(match_operand:SI 2 "reg_or_cint_ior_operand" "")))]
   ""
-  "
-{
-  if (! (ior_operand (operands[2], SImode)
-         || register_operand (operands[2], SImode)))
-    operands[2] = force_reg (SImode, operands[2]);
-}")
+  "")
 
 (define_insn ""
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(ior:SI (match_operand:SI 1 "register_operand" "0,0")
-		(match_operand:SI 2 "ior_operand" "M,i")))]
+		(match_operand:SI 2 "cint_ior_operand" "M,i")))]
   ""
   "* return output_ior (operands); "
   [(set_attr "type" "binary,shift")
@@ -6358,27 +6421,41 @@
 ;; Processors prior to PA 2.0 don't have a fneg instruction.  Fast
 ;; negation can be done by subtracting from plus zero.  However, this
 ;; violates the IEEE standard when negating plus and minus zero.
+;; The slow path toggles the sign bit in the general registers.
 (define_expand "negdf2"
-  [(parallel [(set (match_operand:DF 0 "register_operand" "")
-		   (neg:DF (match_operand:DF 1 "register_operand" "")))
-	      (use (match_dup 2))])]
-  "! TARGET_SOFT_FLOAT"
+  [(set (match_operand:DF 0 "register_operand" "")
+	(neg:DF (match_operand:DF 1 "register_operand" "")))]
+  "!TARGET_SOFT_FLOAT"
 {
   if (TARGET_PA_20 || flag_unsafe_math_optimizations)
     emit_insn (gen_negdf2_fast (operands[0], operands[1]));
   else
-    {
-      operands[2] = force_reg (DFmode,
-	CONST_DOUBLE_FROM_REAL_VALUE (dconstm1, DFmode));
-      emit_insn (gen_muldf3 (operands[0], operands[1], operands[2]));
-    }
+    emit_insn (gen_negdf2_slow (operands[0], operands[1]));
   DONE;
 })
+
+(define_insn "negdf2_slow"
+  [(set (match_operand:DF 0 "register_operand" "=r")
+	(neg:DF (match_operand:DF 1 "register_operand" "r")))]
+  "!TARGET_SOFT_FLOAT && !TARGET_PA_20"
+  "*
+{
+  if (rtx_equal_p (operands[0], operands[1]))
+    return \"and,< %1,%1,%0\;depi,tr 1,0,1,%0\;depi 0,0,1,%0\";
+  else
+    return \"and,< %1,%1,%0\;depi,tr 1,0,1,%0\;depi 0,0,1,%0\;copy %R1,%R0\";
+}"
+  [(set_attr "type" "multi")
+   (set (attr "length")
+	(if_then_else (ne (symbol_ref "rtx_equal_p (operands[0], operands[1])")
+			  (const_int 0))
+	    (const_int 12)
+	    (const_int 16)))])
 
 (define_insn "negdf2_fast"
   [(set (match_operand:DF 0 "register_operand" "=f")
 	(neg:DF (match_operand:DF 1 "register_operand" "f")))]
-  "! TARGET_SOFT_FLOAT && (TARGET_PA_20 || flag_unsafe_math_optimizations)"
+  "!TARGET_SOFT_FLOAT"
   "*
 {
   if (TARGET_PA_20)
@@ -6390,26 +6467,29 @@
    (set_attr "length" "4")])
 
 (define_expand "negsf2"
-  [(parallel [(set (match_operand:SF 0 "register_operand" "")
-		   (neg:SF (match_operand:SF 1 "register_operand" "")))
-	      (use (match_dup 2))])]
-  "! TARGET_SOFT_FLOAT"
+  [(set (match_operand:SF 0 "register_operand" "")
+	(neg:SF (match_operand:SF 1 "register_operand" "")))]
+  "!TARGET_SOFT_FLOAT"
 {
   if (TARGET_PA_20 || flag_unsafe_math_optimizations)
     emit_insn (gen_negsf2_fast (operands[0], operands[1]));
   else
-    {
-      operands[2] = force_reg (SFmode,
-	CONST_DOUBLE_FROM_REAL_VALUE (dconstm1, SFmode));
-      emit_insn (gen_mulsf3 (operands[0], operands[1], operands[2]));
-    }
+    emit_insn (gen_negsf2_slow (operands[0], operands[1]));
   DONE;
 })
+
+(define_insn "negsf2_slow"
+  [(set (match_operand:SF 0 "register_operand" "=r")
+	(neg:SF (match_operand:SF 1 "register_operand" "r")))]
+  "!TARGET_SOFT_FLOAT && !TARGET_PA_20"
+  "and,< %1,%1,%0\;depi,tr 1,0,1,%0\;depi 0,0,1,%0"
+  [(set_attr "type" "multi")
+   (set_attr "length" "12")])
 
 (define_insn "negsf2_fast"
   [(set (match_operand:SF 0 "register_operand" "=f")
 	(neg:SF (match_operand:SF 1 "register_operand" "f")))]
-  "! TARGET_SOFT_FLOAT && (TARGET_PA_20 || flag_unsafe_math_optimizations)"
+  "!TARGET_SOFT_FLOAT"
   "*
 {
   if (TARGET_PA_20)
@@ -6931,7 +7011,7 @@
   ""
   "*
 {
-  int x = INTVAL (operands[1]);
+  unsigned HOST_WIDE_INT x = UINTVAL (operands[1]);
   operands[2] = GEN_INT (4 + exact_log2 ((x >> 4) + 1));
   operands[1] = GEN_INT ((x & 0xf) - 0x10);
   return \"{zvdepi %1,%2,%0|depwi,z %1,%%sar,%2,%0}\";
@@ -6949,7 +7029,7 @@
   "exact_log2 (INTVAL (operands[1]) + 1) > 0"
   "*
 {
-  int x = INTVAL (operands[1]);
+  HOST_WIDE_INT x = INTVAL (operands[1]);
   operands[2] = GEN_INT (exact_log2 (x + 1));
   return \"{vdepi -1,%2,%0|depwi -1,%%sar,%2,%0}\";
 }"
@@ -6966,7 +7046,7 @@
   "INTVAL (operands[1]) == -2"
   "*
 {
-  int x = INTVAL (operands[1]);
+  HOST_WIDE_INT x = INTVAL (operands[1]);
   operands[2] = GEN_INT (exact_log2 ((~x) + 1));
   return \"{vdepi 0,%2,%0|depwi 0,%%sar,%2,%0}\";
 }"
@@ -7030,7 +7110,7 @@
   "TARGET_64BIT"
   "*
 {
-  int x = INTVAL (operands[1]);
+  unsigned HOST_WIDE_INT x = UINTVAL (operands[1]);
   operands[2] = GEN_INT (4 + exact_log2 ((x >> 4) + 1));
   operands[1] = GEN_INT ((x & 0x1f) - 0x20);
   return \"depdi,z %1,%%sar,%2,%0\";
@@ -7048,7 +7128,7 @@
   "TARGET_64BIT && exact_log2 (INTVAL (operands[1]) + 1) > 0"
   "*
 {
-  int x = INTVAL (operands[1]);
+  HOST_WIDE_INT x = INTVAL (operands[1]);
   operands[2] = GEN_INT (exact_log2 (x + 1));
   return \"depdi -1,%%sar,%2,%0\";
 }"
@@ -7065,7 +7145,7 @@
   "TARGET_64BIT && INTVAL (operands[1]) == -2"
   "*
 {
-  int x = INTVAL (operands[1]);
+  HOST_WIDE_INT x = INTVAL (operands[1]);
   operands[2] = GEN_INT (exact_log2 ((~x) + 1));
   return \"depdi 0,%%sar,%2,%0\";
 }"
@@ -7496,22 +7576,11 @@
     {
       rtx index = gen_reg_rtx (SImode);
 
-      operands[1] = GEN_INT (-INTVAL (operands[1]));
+      operands[1] = gen_int_mode (-INTVAL (operands[1]), SImode);
       if (!INT_14_BITS (operands[1]))
 	operands[1] = force_reg (SImode, operands[1]);
       emit_insn (gen_addsi3 (index, operands[0], operands[1]));
       operands[0] = index;
-    }
-
-  /* In 64bit mode we must make sure to wipe the upper bits of the register
-     just in case the addition overflowed or we had random bits in the
-     high part of the register.  */
-  if (TARGET_64BIT)
-    {
-      rtx index = gen_reg_rtx (DImode);
-
-      emit_insn (gen_extendsidi2 (index, operands[0]));
-      operands[0] = gen_rtx_SUBREG (SImode, index, 4);
     }
 
   if (!INT_5_BITS (operands[2]))
@@ -7529,6 +7598,17 @@
      the effort.  */
   emit_insn (gen_cmpsi (operands[0], operands[2]));
   emit_jump_insn (gen_bgtu (operands[4]));
+
+  /* In 64bit mode we must make sure to wipe the upper bits of the register
+     just in case the addition overflowed or we had random bits in the
+     high part of the register.  */
+  if (TARGET_64BIT)
+    {
+      rtx index = gen_reg_rtx (DImode);
+
+      emit_insn (gen_extendsidi2 (index, operands[0]));
+      operands[0] = index;
+    }
 
   if (TARGET_BIG_SWITCH)
     {
@@ -7590,8 +7670,7 @@
 ;;; 64-bit code, 32-bit relative branch table.
 (define_insn "casesi64p"
   [(set (pc) (mem:DI (plus:DI
-		       (mult:DI (sign_extend:DI
-				  (match_operand:SI 0 "register_operand" "r"))
+		       (mult:DI (match_operand:DI 0 "register_operand" "r")
 				(const_int 8))
 		       (label_ref (match_operand 1 "" "")))))
    (clobber (match_scratch:DI 2 "=&r"))
@@ -9911,89 +9990,38 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
    (match_operand 2 "const_int_operand" "")]
   "TARGET_PA_20"
 {
-  int locality = INTVAL (operands[2]);
-
-  gcc_assert (locality >= 0 && locality <= 3);
-
-  /* Change operand[0] to a MEM as we don't have the infrastructure
-     to output all the supported address modes for ldw/ldd when we use
-     the address directly.  However, we do have it for MEMs.  */
-  operands[0] = gen_rtx_MEM (QImode, operands[0]);
-
-  /* If the address isn't valid for the prefetch, replace it.  */
-  if (locality)
-    {
-      if (!prefetch_nocc_operand (operands[0], QImode))
-	operands[0]
-	  = replace_equiv_address (operands[0],
-				   copy_to_mode_reg (Pmode,
-						     XEXP (operands[0], 0)));
-      emit_insn (gen_prefetch_nocc (operands[0], operands[1], operands[2]));
-    }
-  else
-    {
-      if (!prefetch_cc_operand (operands[0], QImode))
-	operands[0]
-	  = replace_equiv_address (operands[0],
-				   copy_to_mode_reg (Pmode,
-						     XEXP (operands[0], 0)));
-      emit_insn (gen_prefetch_cc (operands[0], operands[1], operands[2]));
-    }
+  operands[0] = copy_addr_to_reg (operands[0]);
+  emit_insn (gen_prefetch_20 (operands[0], operands[1], operands[2]));
   DONE;
 })
 
-(define_insn "prefetch_cc"
-  [(prefetch (match_operand:QI 0 "prefetch_cc_operand" "RW")
+(define_insn "prefetch_20"
+  [(prefetch (match_operand 0 "pmode_register_operand" "r")
 	     (match_operand:SI 1 "const_int_operand" "n")
 	     (match_operand:SI 2 "const_int_operand" "n"))]
-  "TARGET_PA_20 && operands[2] == const0_rtx"
+  "TARGET_PA_20"
 {
-  /* The SL cache-control completor indicates good spatial locality but
+  /* The SL cache-control completer indicates good spatial locality but
      poor temporal locality.  The ldw instruction with a target of general
      register 0 prefetches a cache line for a read.  The ldd instruction
      prefetches a cache line for a write.  */
-  static const char * const instr[2] = {
-    "ldw%M0,sl %0,%%r0",
-    "ldd%M0,sl %0,%%r0"
-  };
-  int read_or_write = INTVAL (operands[1]);
-
-  gcc_assert (read_or_write >= 0 && read_or_write <= 1);
-
-  return instr [read_or_write];
-}
-  [(set_attr "type" "load")
-   (set_attr "length" "4")])
-
-(define_insn "prefetch_nocc"
-  [(prefetch (match_operand:QI 0 "prefetch_nocc_operand" "A,RQ")
-	     (match_operand:SI 1 "const_int_operand" "n,n")
-	     (match_operand:SI 2 "const_int_operand" "n,n"))]
-  "TARGET_PA_20 && operands[2] != const0_rtx"
-{
-  /* The ldw instruction with a target of general register 0 prefetches
-     a cache line for a read.  The ldd instruction prefetches a cache line
-     for a write.  */
   static const char * const instr[2][2] = {
     {
-      "ldw RT'%A0,%%r0",
-      "ldd RT'%A0,%%r0",
+      "ldw,sl 0(%0),%%r0",
+      "ldd,sl 0(%0),%%r0"
     },
     {
-      "ldw%M0 %0,%%r0",
-      "ldd%M0 %0,%%r0",
+      "ldw 0(%0),%%r0",
+      "ldd 0(%0),%%r0"
     }
   };
-  int read_or_write = INTVAL (operands[1]);
+  int read_or_write = INTVAL (operands[1]) == 0 ? 0 : 1;
+  int locality = INTVAL (operands[2]) == 0 ? 0 : 1;
 
-  gcc_assert (which_alternative == 0 || which_alternative == 1);
-  gcc_assert (read_or_write >= 0 && read_or_write <= 1);
-
-  return instr [which_alternative][read_or_write];
+  return instr [locality][read_or_write];
 }
   [(set_attr "type" "load")
    (set_attr "length" "4")])
-
 
 ;; TLS Support
 (define_insn "tgd_load"

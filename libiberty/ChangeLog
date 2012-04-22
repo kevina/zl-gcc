@@ -1,3 +1,54 @@
+2012-03-13  Release Manager
+
+	* GCC 4.4.7 released.
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-06-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/43838
+	* cp-demangle.c (struct d_print_info): Add flush_count field.
+	(d_print_init): Initialize it to 0.
+	(d_print_flush): Increment it.
+	(d_print_comp): If needed flush before appending ", ".  Only
+	decrement dpi->len if no flushes happened during the recursive
+	call.
+	* testsuite/demangle-expected: Add a test for this.
+
+2009-06-16  Nick Clifton  <nickc@redhat.com>
+
+	PR 10197
+	* testsuite/test-demangle.c: Rename getline to get_line to avoid
+	conflicts with system function of the same name.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-01-25  Ian Lance Taylor  <iant@google.com>
+
+	* cp-demangle.c (cplus_demangle_type): Check for invalid type
+	after "DF".
+	* testsuite/demangle-expected: Add test.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-10-15  Release Manager
+
+	* GCC 4.4.2 released.
+
+2009-07-22  Release Manager
+
+	* GCC 4.4.1 released.
+
 2009-04-21  Release Manager
 
 	* GCC 4.4.0 released.

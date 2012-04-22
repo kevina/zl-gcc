@@ -1661,13 +1661,13 @@ try_instantiate_multiple_fields (struct sra_elt *elt, tree f)
 		  || mbit + msize <= fbit)
 		continue;
 
-	      if (fbit <= mbit)
+	      if (fbit < bit)
 		{
 		  unsigned HOST_WIDE_INT diff = fbit + fsize - mbit;
 		  mbit += diff;
 		  msize -= diff;
 		}
-	      else if (fbit > mbit)
+	      else if (fbit > bit)
 		msize -= (mbit + msize - fbit);
 	      else
 		gcc_unreachable ();
@@ -2932,6 +2932,12 @@ bitfield_overlaps_p (tree blen, tree bpos, struct sra_elt *fld,
     }
   else
     gcc_unreachable ();
+
+  if (CONTAINS_PLACEHOLDER_P (flen))
+    flen = size_binop (MULT_EXPR,
+		       fold_convert (bitsizetype,
+				     lang_hooks.types.max_size (fld->type)),
+		       bitsize_unit_node);
 
   gcc_assert (host_integerp (blen, 1)
 	      && host_integerp (bpos, 1)

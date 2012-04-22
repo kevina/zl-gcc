@@ -49,8 +49,9 @@ along with GCC; see the file COPYING3.  If not see
    target, always use the svr4_dbx_register_map for DWARF .eh_frame
    even if we don't use DWARF .debug_frame. */
 #undef DWARF_FRAME_REGNUM
-#define DWARF_FRAME_REGNUM(n) TARGET_64BIT \
-	? dbx64_register_map[(n)] : svr4_dbx_register_map[(n)] 
+#define DWARF_FRAME_REGNUM(n)					\
+  (TARGET_64BIT ? dbx64_register_map[(n)]			\
+		: svr4_dbx_register_map[(n)])
 
 #ifdef HAVE_GAS_PE_SECREL32_RELOC
 /* Use section relative relocations for debugging offsets.  Unlike
@@ -73,7 +74,8 @@ along with GCC; see the file COPYING3.  If not see
 #define TARGET_OS_CPP_BUILTINS()					\
   do									\
     {									\
-	builtin_define ("_X86_=1");					\
+	if (!TARGET_64BIT)						\
+	  builtin_define ("_X86_=1");					\
 	builtin_assert ("system=winnt");				\
 	builtin_define ("__stdcall=__attribute__((__stdcall__))");	\
 	builtin_define ("__fastcall=__attribute__((__fastcall__))");	\
@@ -125,8 +127,6 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Enable parsing of #pragma pack(push,<n>) and #pragma pack(pop).  */
 #define HANDLE_PRAGMA_PACK_PUSH_POP 1
-/* Enable push_macro & pop_macro */
-#define HANDLE_PRAGMA_PUSH_POP_MACRO 1
 
 union tree_node;
 #define TREE union tree_node *

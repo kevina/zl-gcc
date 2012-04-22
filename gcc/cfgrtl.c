@@ -1,6 +1,6 @@
 /* Control flow graph manipulation code for GNU compiler.
    Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -53,6 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "toplev.h"
 #include "tm_p.h"
 #include "obstack.h"
+#include "insn-attr.h"
 #include "insn-config.h"
 #include "cfglayout.h"
 #include "expr.h"
@@ -427,13 +428,30 @@ free_bb_for_insn (void)
   return 0;
 }
 
+static unsigned int
+rest_of_pass_free_cfg (void)
+{
+#ifdef DELAY_SLOTS
+  /* The resource.c machinery uses DF but the CFG isn't guaranteed to be
+     valid at that point so it would be too late to call df_analyze.  */
+  if (optimize > 0 && flag_delayed_branch)
+    {
+      df_note_add_problem ();
+      df_analyze ();
+    }
+#endif
+
+  free_bb_for_insn ();
+  return 0;
+}
+
 struct rtl_opt_pass pass_free_cfg =
 {
  {
   RTL_PASS,
   NULL,                                 /* name */
   NULL,                                 /* gate */
-  free_bb_for_insn,                     /* execute */
+  rest_of_pass_free_cfg,                /* execute */
   NULL,                                 /* sub */
   NULL,                                 /* next */
   0,                                    /* static_pass_number */
@@ -2936,7 +2954,7 @@ rtl_lv_add_condition_to_bb (basic_block first_head ,
   op0 = force_operand (op0, NULL_RTX);
   op1 = force_operand (op1, NULL_RTX);
   do_compare_rtx_and_jump (op0, op1, comp, 0,
-			   mode, NULL_RTX, NULL_RTX, label);
+			   mode, NULL_RTX, NULL_RTX, label, -1);
   jump = get_last_insn ();
   JUMP_LABEL (jump) = label;
   LABEL_NUSES (label)++;

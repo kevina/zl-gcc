@@ -1227,6 +1227,14 @@ One use of this macro is to increase alignment of medium-size data to
 make it all fit in fewer cache lines.
 @end defmac
 
+@defmac MINIMUM_ALIGNMENT (@var{exp}, @var{mode}, @var{align})
+If defined, a C expression to compute the minimum required alignment
+for dynamic stack realignment purposes for @var{exp} (a type or decl),
+@var{mode}, assuming normal alignment @var{align}.
+
+If this macro is not defined, then @var{align} will be used.
+@end defmac
+
 @defmac EMPTY_FIELD_BOUNDARY
 Alignment in bits to be given to a structure bit-field that follows an
 empty field such as @code{int : 0;}.
@@ -10140,18 +10148,6 @@ the machine default), define this macro to the necessary value (in bytes).
 This must be a value that would also be valid to use with
 @samp{#pragma pack()} (that is, a small power of two).
 @end defmac
-
-@findex #pragma
-@findex pragma
-@defmac HANDLE_PRAGMA_PUSH_POP_MACRO
-Define this macro if you want to support the Win32 style pragmas
-@samp{#pragma push_macro(macro-name-as-string)} and @samp{#pragma
-pop_macro(macro-name-as-string)}.  The @samp{#pragma push_macro(
-macro-name-as-string)} pragma saves the named macro and via
-@samp{#pragma pop_macro(macro-name-as-string)} it will return to the
-previous value.
-@end defmac
-
 
 @defmac DOLLARS_IN_IDENTIFIERS
 Define this macro to control use of the character @samp{$} in

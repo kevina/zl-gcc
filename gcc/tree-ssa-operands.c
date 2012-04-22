@@ -1606,6 +1606,9 @@ get_tmr_operands (gimple stmt, tree expr, int flags)
   /* Mark the statement as having memory operands.  */
   gimple_set_references_memory (stmt, true);
 
+  if (TREE_THIS_VOLATILE (expr))
+    gimple_set_has_volatile_ops (stmt, true);
+
   /* First record the real operands.  */
   get_expr_operands (stmt, &TMR_BASE (expr), opf_use);
   get_expr_operands (stmt, &TMR_INDEX (expr), opf_use);
@@ -2099,6 +2102,13 @@ parse_ssa_operands (gimple stmt)
       /* Add call-clobbered operands, if needed.  */
       if (code == GIMPLE_CALL)
 	maybe_add_call_clobbered_vops (stmt);
+
+      /* Make sure the return value is addressable in case of NRV.  */
+      if (code == GIMPLE_CALL
+	  && gimple_call_lhs (stmt) != NULL_TREE
+	  && gimple_call_return_slot_opt_p (stmt)
+	  && TREE_ADDRESSABLE (TREE_TYPE (gimple_call_lhs (stmt))))
+	gimple_add_to_addresses_taken (stmt, gimple_call_lhs (stmt));
     }
 }
 

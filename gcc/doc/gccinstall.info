@@ -1,5 +1,5 @@
-This is doc/gccinstall.info, produced by makeinfo version 4.12 from
-/usr/src/gcc-4.4.0/gcc-4.4.0/gcc/doc/install.texi.
+This is doc/gccinstall.info, produced by makeinfo version 4.13 from
+/d//gcc-4.4.7/gcc-4.4.7/gcc/doc/install.texi.
 
 Copyright (C) 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008 Free
@@ -2327,8 +2327,6 @@ tools can also be obtained from:
 
    * http://www.nongnu.org/avr/
 
-   * http://home.overta.ru/users/denisc/
-
    * http://www.amelek.gda.pl/avr/
 
    We _strongly_ recommend using binutils 2.13 or newer.
@@ -2650,6 +2648,24 @@ See bug 10877 for more information.
    If you receive Signal 11 errors when building on GNU/Linux, then it
 is possible you have a hardware problem.  Further information on this
 can be found on www.bitwizard.nl.
+
+i?86-*-solaris2.[89]
+====================
+
+The Sun assembler in Solaris 8 and 9 has several bugs and limitations.
+While GCC works around them, several features are missing, so it is
+recommended to use the GNU assembler instead.  There is no bundled
+version, but the current version, from GNU binutils 2.20.1, is known to
+work.
+
+   Solaris~2/x86 doesn't support the execution of SSE/SSE2 instructions
+before Solaris~9 4/04, even if the CPU supports them.  Programs will
+receive `SIGILL' if they try.  The fix is available both in Solaris~9
+Update~6 and kernel patch 112234-12 or newer.  There is no
+corresponding patch for Solaris 8.  To avoid this problem, `-march'
+defaults to `pentiumpro' on Solaris 8 and 9.  If you have the patch
+installed, you can configure GCC with an appropriate `--with-arch'
+option, but need GNU `as' for SSE2 support.
 
 i?86-*-solaris2.10
 ==================
@@ -4153,84 +4169,85 @@ Concept Index
 
 
 Tag Table:
-Node: Top1945
-Node: Installing GCC2503
-Node: Prerequisites4018
-Node: Downloading the source13023
-Node: Configuration14944
-Ref: with-gnu-as28361
-Ref: with-as29259
-Ref: with-gnu-ld30672
-Node: Building67829
-Node: Testing79772
-Node: Final install87552
-Node: Binaries92782
-Node: Specific94755
-Ref: alpha-x-x95261
-Ref: alpha-dec-osf95750
-Ref: arc-x-elf98873
-Ref: arm-x-elf98973
-Ref: arm-x-coff99193
-Ref: arm-x-aout99395
-Ref: avr99517
-Ref: bfin100201
-Ref: cris100443
-Ref: crx101259
-Ref: dos101922
-Ref: x-x-freebsd102245
-Ref: h8300-hms104628
-Ref: hppa-hp-hpux104980
-Ref: hppa-hp-hpux10107351
-Ref: hppa-hp-hpux11107984
-Ref: x-x-linux-gnu113643
-Ref: ix86-x-linux113836
-Ref: ix86-x-solaris210114149
-Ref: ia64-x-linux114535
-Ref: ia64-x-hpux115305
-Ref: x-ibm-aix115860
-Ref: iq2000-x-elf121843
-Ref: m32c-x-elf121983
-Ref: m32r-x-elf122085
-Ref: m6811-elf122187
-Ref: m6812-elf122337
-Ref: m68k-x-x122487
-Ref: m68k-x-uclinux123492
-Ref: mips-x-x123855
-Ref: mips-sgi-irix5126532
-Ref: mips-sgi-irix6127480
-Ref: powerpc-x-x130287
-Ref: powerpc-x-darwin130492
-Ref: powerpc-x-elf131039
-Ref: powerpc-x-linux-gnu131124
-Ref: powerpc-x-netbsd131219
-Ref: powerpc-x-eabisim131307
-Ref: powerpc-x-eabi131433
-Ref: powerpcle-x-elf131509
-Ref: powerpcle-x-eabisim131601
-Ref: powerpcle-x-eabi131734
-Ref: s390-x-linux131817
-Ref: s390x-x-linux131889
-Ref: s390x-ibm-tpf131976
-Ref: x-x-solaris2132107
-Ref: sparc-sun-solaris2135984
-Ref: sparc-sun-solaris27138705
-Ref: sparc-x-linux141169
-Ref: sparc64-x-solaris2141394
-Ref: sparcv9-x-solaris2142039
-Ref: x-x-vxworks142124
-Ref: x86-64-x-x143646
-Ref: xtensa-x-elf143974
-Ref: xtensa-x-linux144645
-Ref: windows144986
-Ref: x-x-cygwin146941
-Ref: x-x-interix147211
-Ref: x-x-mingw32147577
-Ref: os2147803
-Ref: older147994
-Ref: elf150111
-Node: Old150369
-Node: Configurations153506
-Node: GNU Free Documentation License157488
-Node: Concept Index179904
+Node: Top1940
+Node: Installing GCC2498
+Node: Prerequisites4013
+Node: Downloading the source13018
+Node: Configuration14939
+Ref: with-gnu-as28356
+Ref: with-as29254
+Ref: with-gnu-ld30667
+Node: Building67824
+Node: Testing79767
+Node: Final install87547
+Node: Binaries92777
+Node: Specific94750
+Ref: alpha-x-x95256
+Ref: alpha-dec-osf95745
+Ref: arc-x-elf98868
+Ref: arm-x-elf98968
+Ref: arm-x-coff99188
+Ref: arm-x-aout99390
+Ref: avr99512
+Ref: bfin100154
+Ref: cris100396
+Ref: crx101212
+Ref: dos101875
+Ref: x-x-freebsd102198
+Ref: h8300-hms104581
+Ref: hppa-hp-hpux104933
+Ref: hppa-hp-hpux10107304
+Ref: hppa-hp-hpux11107937
+Ref: x-x-linux-gnu113596
+Ref: ix86-x-linux113789
+Ref: ix86-x-solaris289114102
+Ref: ix86-x-solaris210114948
+Ref: ia64-x-linux115334
+Ref: ia64-x-hpux116104
+Ref: x-ibm-aix116659
+Ref: iq2000-x-elf122642
+Ref: m32c-x-elf122782
+Ref: m32r-x-elf122884
+Ref: m6811-elf122986
+Ref: m6812-elf123136
+Ref: m68k-x-x123286
+Ref: m68k-x-uclinux124291
+Ref: mips-x-x124654
+Ref: mips-sgi-irix5127331
+Ref: mips-sgi-irix6128279
+Ref: powerpc-x-x131086
+Ref: powerpc-x-darwin131291
+Ref: powerpc-x-elf131838
+Ref: powerpc-x-linux-gnu131923
+Ref: powerpc-x-netbsd132018
+Ref: powerpc-x-eabisim132106
+Ref: powerpc-x-eabi132232
+Ref: powerpcle-x-elf132308
+Ref: powerpcle-x-eabisim132400
+Ref: powerpcle-x-eabi132533
+Ref: s390-x-linux132616
+Ref: s390x-x-linux132688
+Ref: s390x-ibm-tpf132775
+Ref: x-x-solaris2132906
+Ref: sparc-sun-solaris2136783
+Ref: sparc-sun-solaris27139504
+Ref: sparc-x-linux141968
+Ref: sparc64-x-solaris2142193
+Ref: sparcv9-x-solaris2142838
+Ref: x-x-vxworks142923
+Ref: x86-64-x-x144445
+Ref: xtensa-x-elf144773
+Ref: xtensa-x-linux145444
+Ref: windows145785
+Ref: x-x-cygwin147740
+Ref: x-x-interix148010
+Ref: x-x-mingw32148376
+Ref: os2148602
+Ref: older148793
+Ref: elf150910
+Node: Old151168
+Node: Configurations154305
+Node: GNU Free Documentation License158287
+Node: Concept Index180703
 
 End Tag Table

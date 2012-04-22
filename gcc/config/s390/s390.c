@@ -52,6 +52,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "optabs.h"
 #include "gimple.h"
 #include "df.h"
+#include "params.h"
 
 
 /* Define the specific costs for a given cpu.  */
@@ -204,13 +205,13 @@ struct processor_costs z10_cost =
   COSTS_N_INSNS (10),    /* MSGFR */
   COSTS_N_INSNS (10),    /* MSGR  */
   COSTS_N_INSNS (10),    /* MSR   */
-  COSTS_N_INSNS (10),    /* multiplication in DFmode */
+  COSTS_N_INSNS (1) ,    /* multiplication in DFmode */
   COSTS_N_INSNS (50),    /* MXBR */
   COSTS_N_INSNS (120),   /* SQXBR */
   COSTS_N_INSNS (52),    /* SQDBR */
   COSTS_N_INSNS (38),    /* SQEBR */
-  COSTS_N_INSNS (10),    /* MADBR */
-  COSTS_N_INSNS (10),    /* MAEBR */
+  COSTS_N_INSNS (1),     /* MADBR */
+  COSTS_N_INSNS (1),     /* MAEBR */
   COSTS_N_INSNS (111),   /* DXBR */
   COSTS_N_INSNS (39),    /* DDBR */
   COSTS_N_INSNS (32),    /* DEBR */
@@ -222,6 +223,9 @@ struct processor_costs z10_cost =
 };
 
 extern int reload_completed;
+
+/* Kept up to date using the SCHED_VARIABLE_ISSUE hook.  */
+static rtx last_scheduled_insn;
 
 /* Save information from a "cmpxx" operation until the branch or scc is
    emitted.  */
@@ -351,6 +355,10 @@ struct machine_function GTY(())
 
 #define REGNO_PAIR_OK(REGNO, MODE)                               \
   (HARD_REGNO_NREGS ((REGNO), (MODE)) == 1 || !((REGNO) & 1))
+
+/* That's the read ahead of the dynamic branch prediction unit in
+   bytes on a z10 CPU.  */
+#define Z10_PREDICT_DISTANCE 384
 
 static enum machine_mode
 s390_libgcc_cmp_return_mode (void)
@@ -1641,6 +1649,20 @@ override_options (void)
   if (!(target_flags_explicit & MASK_LONG_DOUBLE_128))
     target_flags |= MASK_LONG_DOUBLE_128;
 #endif
+
+  if (s390_tune == PROCESSOR_2097_Z10)
+    {
+      if (!PARAM_SET_P (PARAM_MAX_UNROLLED_INSNS))
+	set_param_value ("max-unrolled-insns", 100);
+      if (!PARAM_SET_P (PARAM_MAX_UNROLL_TIMES))
+	set_param_value ("max-unroll-times", 32);
+      if (!PARAM_SET_P (PARAM_MAX_COMPLETELY_PEELED_INSNS))
+	set_param_value ("max-completely-peeled-insns", 2000);
+      if (!PARAM_SET_P (PARAM_MAX_COMPLETELY_PEEL_TIMES))
+	set_param_value ("max-completely-peel-times", 64);
+    }
+
+  set_param_value ("max-pending-list-length", 256);
 }
 
 /* Map for smallest class containing reg regno.  */
@@ -1676,6 +1698,11 @@ s390_short_displacement (rtx disp)
 {
   /* No displacement is OK.  */
   if (!disp)
+    return true;
+
+  /* Without the long displacement facility we don't need to
+     distingiush between long and short displacement.  */
+  if (!TARGET_LONG_DISPLACEMENT)
     return true;
 
   /* Integer displacement in range.  */
@@ -2046,130 +2073,166 @@ s390_legitimate_address_without_index_p (rtx op)
 }
 
 
-/* Evaluates constraint strings described by the regular expression
-   ([A|B](Q|R|S|T))|U|W and returns 1 if OP is a valid operand for the
-   constraint given in STR, or 0 else.  */
+/* Return true if ADDR is of kind symbol_ref or symbol_ref + const_int
+   and return these parts in SYMREF and ADDEND.  You can pass NULL in
+   SYMREF and/or ADDEND if you are not interested in these values.  */
 
-int
-s390_mem_constraint (const char *str, rtx op)
+static bool
+s390_symref_operand_p (rtx addr, rtx *symref, HOST_WIDE_INT *addend)
+{
+  HOST_WIDE_INT tmpaddend = 0;
+
+  if (GET_CODE (addr) == CONST)
+    addr = XEXP (addr, 0);
+
+  if (GET_CODE (addr) == PLUS)
+    {
+      if (GET_CODE (XEXP (addr, 0)) == SYMBOL_REF
+	  && CONST_INT_P (XEXP (addr, 1)))
+	{
+	  tmpaddend = INTVAL (XEXP (addr, 1));
+	  addr = XEXP (addr, 0);
+	}
+      else
+	return false;
+    }
+  else
+    if (GET_CODE (addr) != SYMBOL_REF)
+	return false;
+
+  if (symref)
+    *symref = addr;
+  if (addend)
+    *addend = tmpaddend;
+
+  return true;
+}
+
+
+/* Return true if the address in OP is valid for constraint letter C
+   if wrapped in a MEM rtx.  Set LIT_POOL_OK to true if it literal
+   pool MEMs should be accepted.  Only the Q, R, S, T constraint
+   letters are allowed for C.  */
+
+static int
+s390_check_qrst_address (char c, rtx op, bool lit_pool_ok)
 {
   struct s390_address addr;
-  char c = str[0];
+  bool decomposed = false;
 
-  /* Check for offsettable variants of memory constraints.  */
-  if (c == 'A')
+  /* This check makes sure that no symbolic address (except literal
+     pool references) are accepted by the R or T constraints.  */
+  if (s390_symref_operand_p (op, NULL, NULL))
     {
-      /* Only accept non-volatile MEMs.  */
-      if (!MEM_P (op) || MEM_VOLATILE_P (op))
+      if (!lit_pool_ok)
 	return 0;
-
-      if ((reload_completed || reload_in_progress)
-	  ? !offsettable_memref_p (op) : !offsettable_nonstrict_memref_p (op))
+      if (!s390_decompose_address (op, &addr))
 	return 0;
-
-      c = str[1];
-    }
-
-  /* Check for non-literal-pool variants of memory constraints.  */
-  else if (c == 'B')
-    {
-      if (GET_CODE (op) != MEM)
+      if (!addr.literal_pool)
 	return 0;
-      if (!s390_decompose_address (XEXP (op, 0), &addr))
-	return 0;
-      if (addr.literal_pool)
-	return 0;
-
-      c = str[1];
+      decomposed = true;
     }
 
   switch (c)
     {
+    case 'Q': /* no index short displacement */
+      if (!decomposed && !s390_decompose_address (op, &addr))
+	return 0;
+      if (addr.indx)
+	return 0;
+      if (!s390_short_displacement (addr.disp))
+	return 0;
+      break;
+
+    case 'R': /* with index short displacement */
+      if (TARGET_LONG_DISPLACEMENT)
+	{
+	  if (!decomposed && !s390_decompose_address (op, &addr))
+	    return 0;
+	  if (!s390_short_displacement (addr.disp))
+	    return 0;
+	}
+      /* Any invalid address here will be fixed up by reload,
+	 so accept it for the most generic constraint.  */
+      break;
+
+    case 'S': /* no index long displacement */
+      if (!TARGET_LONG_DISPLACEMENT)
+	return 0;
+      if (!decomposed && !s390_decompose_address (op, &addr))
+	return 0;
+      if (addr.indx)
+	return 0;
+      if (s390_short_displacement (addr.disp))
+	return 0;
+      break;
+
+    case 'T': /* with index long displacement */
+      if (!TARGET_LONG_DISPLACEMENT)
+	return 0;
+      /* Any invalid address here will be fixed up by reload,
+	 so accept it for the most generic constraint.  */
+      if ((decomposed || s390_decompose_address (op, &addr))
+	  && s390_short_displacement (addr.disp))
+	return 0;
+      break;
+    default:
+      return 0;
+    }
+  return 1;
+}
+
+
+/* Evaluates constraint strings described by the regular expression
+   ([A|B|Z](Q|R|S|T))|U|W|Y and returns 1 if OP is a valid operand for
+   the constraint given in STR, or 0 else.  */
+
+int
+s390_mem_constraint (const char *str, rtx op)
+{
+  char c = str[0];
+
+  switch (c)
+    {
+    case 'A':
+      /* Check for offsettable variants of memory constraints.  */
+      if (!MEM_P (op) || MEM_VOLATILE_P (op))
+	return 0;
+      if ((reload_completed || reload_in_progress)
+	  ? !offsettable_memref_p (op) : !offsettable_nonstrict_memref_p (op))
+	return 0;
+      return s390_check_qrst_address (str[1], XEXP (op, 0), true);
+    case 'B':
+      /* Check for non-literal-pool variants of memory constraints.  */
+      if (!MEM_P (op))
+	return 0;
+      return s390_check_qrst_address (str[1], XEXP (op, 0), false);
     case 'Q':
-      if (GET_CODE (op) != MEM)
-	return 0;
-      if (!s390_decompose_address (XEXP (op, 0), &addr))
-	return 0;
-      if (addr.indx)
-	return 0;
-
-      if (TARGET_LONG_DISPLACEMENT)
-	{
-	  if (!s390_short_displacement (addr.disp))
-	    return 0;
-	}
-      break;
-
     case 'R':
-      if (GET_CODE (op) != MEM)
-	return 0;
-
-      if (TARGET_LONG_DISPLACEMENT)
-	{
-	  if (!s390_decompose_address (XEXP (op, 0), &addr))
-	    return 0;
-	  if (!s390_short_displacement (addr.disp))
-	    return 0;
-	}
-      break;
-
     case 'S':
-      if (!TARGET_LONG_DISPLACEMENT)
-	return 0;
-      if (GET_CODE (op) != MEM)
-	return 0;
-      if (!s390_decompose_address (XEXP (op, 0), &addr))
-	return 0;
-      if (addr.indx)
-	return 0;
-      if (s390_short_displacement (addr.disp))
-	return 0;
-      break;
-
     case 'T':
-      if (!TARGET_LONG_DISPLACEMENT)
-	return 0;
       if (GET_CODE (op) != MEM)
 	return 0;
-      if (!s390_decompose_address (XEXP (op, 0), &addr))
-	return 0;
-      if (s390_short_displacement (addr.disp))
-	return 0;
-      break;
-
+      return s390_check_qrst_address (c, XEXP (op, 0), true);
     case 'U':
-      if (TARGET_LONG_DISPLACEMENT)
-	{
-	  if (!s390_decompose_address (op, &addr))
-	    return 0;
-	  if (!s390_short_displacement (addr.disp))
-	    return 0;
-	}
-      break;
-
+      return (s390_check_qrst_address ('Q', op, true)
+	      || s390_check_qrst_address ('R', op, true));
     case 'W':
-      if (!TARGET_LONG_DISPLACEMENT)
-	return 0;
-      if (!s390_decompose_address (op, &addr))
-	return 0;
-      if (s390_short_displacement (addr.disp))
-	return 0;
-      break;
-
+      return (s390_check_qrst_address ('S', op, true)
+	      || s390_check_qrst_address ('T', op, true));
     case 'Y':
       /* Simply check for the basic form of a shift count.  Reload will
 	 take care of making sure we have a proper base register.  */
       if (!s390_decompose_shift_count (op, NULL, NULL))
 	return 0;
       break;
-
+    case 'Z':
+      return s390_check_qrst_address (str[1], op, true);
     default:
       return 0;
     }
-
   return 1;
 }
-
 
 
 /* Evaluates constraint strings starting with letter O.  Input
@@ -2731,11 +2794,6 @@ legitimate_reload_constant_p (rtx op)
       && larl_operand (op, VOIDmode))
     return true;
 
-  /* Accept lzXX operands.  */
-  if (GET_CODE (op) == CONST_DOUBLE
-      && CONST_DOUBLE_OK_FOR_CONSTRAINT_P (op, 'G', "G"))
-    return true;
-
   /* Accept double-word operands that can be split.  */
   if (GET_CODE (op) == CONST_INT
       && trunc_int_for_mode (INTVAL (op), word_mode) != INTVAL (op))
@@ -2787,41 +2845,6 @@ s390_preferred_reload_class (rtx op, enum reg_class rclass)
     }
 
   return rclass;
-}
-
-/* Return true if ADDR is of kind symbol_ref or symbol_ref + const_int
-   and return these parts in SYMREF and ADDEND.  You can pass NULL in
-   SYMREF and/or ADDEND if you are not interested in these values.  */
-
-static bool
-s390_symref_operand_p (rtx addr, rtx *symref, HOST_WIDE_INT *addend)
-{
-  HOST_WIDE_INT tmpaddend = 0;
-
-  if (GET_CODE (addr) == CONST)
-    addr = XEXP (addr, 0);
-
-  if (GET_CODE (addr) == PLUS)
-    {
-      if (GET_CODE (XEXP (addr, 0)) == SYMBOL_REF
-	  && CONST_INT_P (XEXP (addr, 1)))
-	{
-	  tmpaddend = INTVAL (XEXP (addr, 1));
-	  addr = XEXP (addr, 0);
-	}
-      else
-	return false;
-    }
-  else
-    if (GET_CODE (addr) != SYMBOL_REF)
-	return false;
-
-  if (symref)
-    *symref = addr;
-  if (addend)
-    *addend = tmpaddend;
-
-  return true;
 }
 
 /* Return true if ADDR is SYMBOL_REF + addend with addend being a
@@ -5276,6 +5299,7 @@ s390_agen_dep_p (rtx dep_insn, rtx insn)
    A STD instruction should be scheduled earlier,
    in order to use the bypass.  */
 
+
 static int
 s390_adjust_priority (rtx insn ATTRIBUTE_UNUSED, int priority)
 {
@@ -5283,7 +5307,8 @@ s390_adjust_priority (rtx insn ATTRIBUTE_UNUSED, int priority)
     return priority;
 
   if (s390_tune != PROCESSOR_2084_Z990
-      && s390_tune != PROCESSOR_2094_Z9_109)
+      && s390_tune != PROCESSOR_2094_Z9_109
+      && s390_tune != PROCESSOR_2097_Z10)
     return priority;
 
   switch (s390_safe_attr_type (insn))
@@ -5301,6 +5326,7 @@ s390_adjust_priority (rtx insn ATTRIBUTE_UNUSED, int priority)
     }
   return priority;
 }
+
 
 /* The number of instructions that can be issued per cycle.  */
 
@@ -7742,20 +7768,37 @@ s390_emit_prologue (void)
 	    }
 	  else
 	    {
-	      HOST_WIDE_INT stack_check_mask = ((s390_stack_size - 1)
-						& ~(stack_guard - 1));
-	      rtx t = gen_rtx_AND (Pmode, stack_pointer_rtx,
-				   GEN_INT (stack_check_mask));
-	      if (TARGET_64BIT)
-		gen_cmpdi (t, const0_rtx);
-	      else
-		gen_cmpsi (t, const0_rtx);
+ 	      /* stack_guard has to be smaller than s390_stack_size.
+ 		 Otherwise we would emit an AND with zero which would
+ 		 not match the test under mask pattern.  */
+ 	      if (stack_guard >= s390_stack_size)
+ 		{
+ 		  warning (0, "frame size of function %qs is "
+			   HOST_WIDE_INT_PRINT_DEC
+ 			   " bytes which is more than half the stack size. "
+ 			   "The dynamic check would not be reliable. "
+ 			   "No check emitted for this function.",
+ 			   current_function_name(),
+ 			   cfun_frame_layout.frame_size);
+ 		}
+ 	      else
+ 		{
+		  HOST_WIDE_INT stack_check_mask = ((s390_stack_size - 1)
+						    & ~(stack_guard - 1));
+		  rtx t = gen_rtx_AND (Pmode, stack_pointer_rtx,
+				       GEN_INT (stack_check_mask));
+		  if (TARGET_64BIT)
+		    gen_cmpdi (t, const0_rtx);
+		  else
+		    gen_cmpsi (t, const0_rtx);
 
-	      emit_insn (gen_conditional_trap (gen_rtx_EQ (CCmode,
-							   gen_rtx_REG (CCmode,
-								     CC_REGNUM),
-							   const0_rtx),
-					       const0_rtx));
+		  emit_insn (gen_conditional_trap (
+                               gen_rtx_EQ (CCmode,
+					   gen_rtx_REG (CCmode,
+							CC_REGNUM),
+					   const0_rtx),
+			       const0_rtx));
+		}
 	    }
   	}
 
@@ -8920,6 +8963,7 @@ s390_encode_section_info (tree decl, rtx rtl, int first)
       && GET_CODE (XEXP (rtl, 0)) == SYMBOL_REF
       && TREE_CONSTANT_POOL_ADDRESS_P (XEXP (rtl, 0))
       && (MEM_ALIGN (rtl) == 0
+	  || GET_MODE_BITSIZE (GET_MODE (rtl)) == 0
 	  || MEM_ALIGN (rtl) < GET_MODE_BITSIZE (GET_MODE (rtl))))
     SYMBOL_REF_FLAGS (XEXP (rtl, 0)) |= SYMBOL_FLAG_NOT_NATURALLY_ALIGNED;
 }
@@ -9589,6 +9633,66 @@ s390_optimize_prologue (void)
     }
 }
 
+/* On z10 the dynamic branch prediction must see the backward jump in
+   a window of 384 bytes. If not it falls back to the static
+   prediction.  This function rearranges the loop backward branch in a
+   way which makes the static prediction always correct.  The function
+   returns true if it added an instruction.  */
+static bool
+s390_z10_fix_long_loop_prediction (rtx insn)
+{
+  rtx set = single_set (insn);
+  rtx code_label, label_ref, new_label;
+  rtx uncond_jump;
+  rtx cur_insn;
+  rtx tmp;
+  int distance;
+
+  /* This will exclude branch on count and branch on index patterns
+     since these are correctly statically predicted.  */
+  if (!set
+      || SET_DEST (set) != pc_rtx
+      || GET_CODE (SET_SRC(set)) != IF_THEN_ELSE)
+    return false;
+
+  label_ref = (GET_CODE (XEXP (SET_SRC (set), 1)) == LABEL_REF ?
+	       XEXP (SET_SRC (set), 1) : XEXP (SET_SRC (set), 2));
+
+  gcc_assert (GET_CODE (label_ref) == LABEL_REF);
+
+  code_label = XEXP (label_ref, 0);
+
+  if (INSN_ADDRESSES (INSN_UID (code_label)) == -1
+      || INSN_ADDRESSES (INSN_UID (insn)) == -1
+      || (INSN_ADDRESSES (INSN_UID (insn))
+	  - INSN_ADDRESSES (INSN_UID (code_label)) < Z10_PREDICT_DISTANCE))
+    return false;
+
+  for (distance = 0, cur_insn = PREV_INSN (insn);
+       distance < Z10_PREDICT_DISTANCE - 6;
+       distance += get_attr_length (cur_insn), cur_insn = PREV_INSN (cur_insn))
+    if (!cur_insn || JUMP_P (cur_insn) || LABEL_P (cur_insn))
+      return false;
+
+  new_label = gen_label_rtx ();
+  uncond_jump = emit_jump_insn_after (
+		  gen_rtx_SET (VOIDmode, pc_rtx,
+			       gen_rtx_LABEL_REF (VOIDmode, code_label)),
+		  insn);
+  emit_label_after (new_label, uncond_jump);
+
+  tmp = XEXP (SET_SRC (set), 1);
+  XEXP (SET_SRC (set), 1) = XEXP (SET_SRC (set), 2);
+  XEXP (SET_SRC (set), 2) = tmp;
+  INSN_CODE (insn) = -1;
+
+  XEXP (label_ref, 0) = new_label;
+  JUMP_LABEL (insn) = new_label;
+  JUMP_LABEL (uncond_jump) = code_label;
+
+  return true;
+}
+
 /* Returns 1 if INSN reads the value of REG for purposes not related
    to addressing of memory, and 0 otherwise.  */
 static int
@@ -9671,96 +9775,89 @@ s390_swap_cmp (rtx cond, rtx *op0, rtx *op1, rtx insn)
    if that register's value is delivered via a bypass, then the
    pipeline recycles, thereby causing significant performance decline.
    This function locates such situations and exchanges the two
-   operands of the compare.  */
-static void
-s390_z10_optimize_cmp (void)
+   operands of the compare.  The function return true whenever it
+   added an insn.  */
+static bool
+s390_z10_optimize_cmp (rtx insn)
 {
-  rtx insn, prev_insn, next_insn;
-  int added_NOPs = 0;
+  rtx prev_insn, next_insn;
+  bool insn_added_p = false;
+  rtx cond, *op0, *op1;
 
-  for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
+  if (GET_CODE (PATTERN (insn)) == PARALLEL)
     {
-      rtx cond, *op0, *op1;
+      /* Handle compare and branch and branch on count
+	 instructions.  */
+      rtx pattern = single_set (insn);
 
-      if (!INSN_P (insn) || INSN_CODE (insn) <= 0)
-	continue;
+      if (!pattern
+	  || SET_DEST (pattern) != pc_rtx
+	  || GET_CODE (SET_SRC (pattern)) != IF_THEN_ELSE)
+	return false;
 
-      if (GET_CODE (PATTERN (insn)) == PARALLEL)
+      cond = XEXP (SET_SRC (pattern), 0);
+      op0 = &XEXP (cond, 0);
+      op1 = &XEXP (cond, 1);
+    }
+  else if (GET_CODE (PATTERN (insn)) == SET)
+    {
+      rtx src, dest;
+
+      /* Handle normal compare instructions.  */
+      src = SET_SRC (PATTERN (insn));
+      dest = SET_DEST (PATTERN (insn));
+
+      if (!REG_P (dest)
+	  || !CC_REGNO_P (REGNO (dest))
+	  || GET_CODE (src) != COMPARE)
+	return false;
+
+      /* s390_swap_cmp will try to find the conditional
+	 jump when passing NULL_RTX as condition.  */
+      cond = NULL_RTX;
+      op0 = &XEXP (src, 0);
+      op1 = &XEXP (src, 1);
+    }
+  else
+    return false;
+
+  if (!REG_P (*op0) || !REG_P (*op1))
+    return false;
+
+  if (GET_MODE_CLASS (GET_MODE (*op0)) != MODE_INT)
+    return false;
+
+  /* Swap the COMPARE arguments and its mask if there is a
+     conflicting access in the previous insn.  */
+  prev_insn = prev_active_insn (insn);
+  if (prev_insn != NULL_RTX && INSN_P (prev_insn)
+      && reg_referenced_p (*op1, PATTERN (prev_insn)))
+    s390_swap_cmp (cond, op0, op1, insn);
+
+  /* Check if there is a conflict with the next insn. If there
+     was no conflict with the previous insn, then swap the
+     COMPARE arguments and its mask.  If we already swapped
+     the operands, or if swapping them would cause a conflict
+     with the previous insn, issue a NOP after the COMPARE in
+     order to separate the two instuctions.  */
+  next_insn = next_active_insn (insn);
+  if (next_insn != NULL_RTX && INSN_P (next_insn)
+      && s390_non_addr_reg_read_p (*op1, next_insn))
+    {
+      if (prev_insn != NULL_RTX && INSN_P (prev_insn)
+	  && s390_non_addr_reg_read_p (*op0, prev_insn))
 	{
-	  /* Handle compare and branch and branch on count
-	     instructions.  */
-	  rtx pattern = single_set (insn);
-
-	  if (!pattern
-	      || SET_DEST (pattern) != pc_rtx
-	      || GET_CODE (SET_SRC (pattern)) != IF_THEN_ELSE)
-	    continue;
-
-	  cond = XEXP (SET_SRC (pattern), 0);
-	  op0 = &XEXP (cond, 0);
-	  op1 = &XEXP (cond, 1);
-	}
-      else if (GET_CODE (PATTERN (insn)) == SET)
-	{
-	  rtx src, dest;
-
-	  /* Handle normal compare instructions.  */
-	  src = SET_SRC (PATTERN (insn));
-	  dest = SET_DEST (PATTERN (insn));
-
-	  if (!REG_P (dest)
-	      || !CC_REGNO_P (REGNO (dest))
-	      || GET_CODE (src) != COMPARE)
-	    continue;
-
-	  /* s390_swap_cmp will try to find the conditional
-	     jump when passing NULL_RTX as condition.  */
-	  cond = NULL_RTX;
-	  op0 = &XEXP (src, 0);
-	  op1 = &XEXP (src, 1);
+	  if (REGNO (*op1) == 0)
+	    emit_insn_after (gen_nop1 (), insn);
+	  else
+	    emit_insn_after (gen_nop (), insn);
+	  insn_added_p = true;
 	}
       else
-	continue;
-
-      if (!REG_P (*op0) || !REG_P (*op1))
-	continue;
-
-      /* Swap the COMPARE arguments and its mask if there is a
-	 conflicting access in the previous insn.  */
-      prev_insn = PREV_INSN (insn);
-      if (prev_insn != NULL_RTX && INSN_P (prev_insn)
-	  && reg_referenced_p (*op1, PATTERN (prev_insn)))
 	s390_swap_cmp (cond, op0, op1, insn);
-
-      /* Check if there is a conflict with the next insn. If there
-	 was no conflict with the previous insn, then swap the
-	 COMPARE arguments and its mask.  If we already swapped
-	 the operands, or if swapping them would cause a conflict
-	 with the previous insn, issue a NOP after the COMPARE in
-	 order to separate the two instuctions.  */
-      next_insn = NEXT_INSN (insn);
-      if (next_insn != NULL_RTX && INSN_P (next_insn)
-	  && s390_non_addr_reg_read_p (*op1, next_insn))
-	{
-	  if (prev_insn != NULL_RTX && INSN_P (prev_insn)
-	      && s390_non_addr_reg_read_p (*op0, prev_insn))
-	    {
-	      if (REGNO (*op1) == 0)
-		emit_insn_after (gen_nop1 (), insn);
-	      else
-		emit_insn_after (gen_nop (), insn);
-	      added_NOPs = 1;
-	    }
-	  else
-	    s390_swap_cmp (cond, op0, op1, insn);
-	}
     }
-
-  /* Adjust branches if we added new instructions.  */
-  if (added_NOPs)
-    shorten_branches (get_insns ());
+  return insn_added_p;
 }
-
 
 /* Perform machine-dependent processing.  */
 
@@ -9872,12 +9969,156 @@ s390_reorg (void)
   /* Try to optimize prologue and epilogue further.  */
   s390_optimize_prologue ();
 
-  /* Eliminate z10-specific pipeline recycles related to some compare
-     instructions.  */
+  /* Walk over the insns and do some z10 specific changes.  */
   if (s390_tune == PROCESSOR_2097_Z10)
-    s390_z10_optimize_cmp ();
+    {
+      rtx insn;
+      bool insn_added_p = false;
+
+      /* The insn lengths and addresses have to be up to date for the
+	 following manipulations.  */
+      shorten_branches (get_insns ());
+
+      for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
+	{
+	  if (!INSN_P (insn) || INSN_CODE (insn) <= 0)
+	    continue;
+
+	  if (JUMP_P (insn))
+	    insn_added_p |= s390_z10_fix_long_loop_prediction (insn);
+
+	  if (GET_CODE (PATTERN (insn)) == PARALLEL
+	      || GET_CODE (PATTERN (insn)) == SET)
+	    insn_added_p |= s390_z10_optimize_cmp (insn);
+	}
+
+      /* Adjust branches if we added new instructions.  */
+      if (insn_added_p)
+	shorten_branches (get_insns ());
+    }
 }
 
+/* Return true if INSN is a fp load insn writing register REGNO.  */
+static inline bool
+s390_fpload_toreg (rtx insn, unsigned int regno)
+{
+  rtx set;
+  enum attr_type flag = s390_safe_attr_type (insn);
+
+  if (flag != TYPE_FLOADSF && flag != TYPE_FLOADDF)
+    return false;
+
+  set = single_set (insn);
+
+  if (set == NULL_RTX)
+    return false;
+
+  if (!REG_P (SET_DEST (set)) || !MEM_P (SET_SRC (set)))
+    return false;
+
+  if (REGNO (SET_DEST (set)) != regno)
+    return false;
+
+  return true;
+}
+
+/* This value describes the distance to be avoided between an
+   aritmetic fp instruction and an fp load writing the same register.
+   Z10_EARLYLOAD_DISTANCE - 1 as well as Z10_EARLYLOAD_DISTANCE + 1 is
+   fine but the exact value has to be avoided. Otherwise the FP
+   pipeline will throw an exception causing a major penalty.  */
+#define Z10_EARLYLOAD_DISTANCE 7
+
+/* Rearrange the ready list in order to avoid the situation described
+   for Z10_EARLYLOAD_DISTANCE.  A problematic load instruction is
+   moved to the very end of the ready list.  */
+static void
+s390_z10_prevent_earlyload_conflicts (rtx *ready, int *nready_p)
+{
+  unsigned int regno;
+  int nready = *nready_p;
+  rtx tmp;
+  int i;
+  rtx insn;
+  rtx set;
+  enum attr_type flag;
+  int distance;
+
+  /* Skip DISTANCE - 1 active insns.  */
+  for (insn = last_scheduled_insn, distance = Z10_EARLYLOAD_DISTANCE - 1;
+       distance > 0 && insn != NULL_RTX;
+       distance--, insn = prev_active_insn (insn))
+    if (CALL_P (insn) || JUMP_P (insn))
+      return;
+
+  if (insn == NULL_RTX)
+    return;
+
+  set = single_set (insn);
+
+  if (set == NULL_RTX || !REG_P (SET_DEST (set))
+      || GET_MODE_CLASS (GET_MODE (SET_DEST (set))) != MODE_FLOAT)
+    return;
+
+  flag = s390_safe_attr_type (insn);
+
+  if (flag == TYPE_FLOADSF || flag == TYPE_FLOADDF)
+    return;
+
+  regno = REGNO (SET_DEST (set));
+  i = nready - 1;
+
+  while (!s390_fpload_toreg (ready[i], regno) && i > 0)
+    i--;
+
+  if (!i)
+    return;
+
+  tmp = ready[i];
+  memmove (&ready[1], &ready[0], sizeof (rtx) * i);
+  ready[0] = tmp;
+}
+
+/* This function is called via hook TARGET_SCHED_REORDER before
+   issueing one insn from list READY which contains *NREADYP entries.
+   For target z10 it reorders load instructions to avoid early load
+   conflicts in the floating point pipeline  */
+static int
+s390_sched_reorder (FILE *file ATTRIBUTE_UNUSED, int verbose ATTRIBUTE_UNUSED,
+		    rtx *ready, int *nreadyp, int clock ATTRIBUTE_UNUSED)
+{
+  if (s390_tune == PROCESSOR_2097_Z10)
+    if (reload_completed && *nreadyp > 1)
+      s390_z10_prevent_earlyload_conflicts (ready, nreadyp);
+
+  return s390_issue_rate ();
+}
+
+/* This function is called via hook TARGET_SCHED_VARIABLE_ISSUE after
+   the scheduler has issued INSN.  It stores the last issued insn into
+   last_scheduled_insn in order to make it available for
+   s390_sched_reorder.  */
+static int
+s390_sched_variable_issue (FILE *file ATTRIBUTE_UNUSED,
+                           int verbose ATTRIBUTE_UNUSED,
+                         rtx insn, int more)
+{
+  last_scheduled_insn = insn;
+
+  if (GET_CODE (PATTERN (insn)) != USE
+      && GET_CODE (PATTERN (insn)) != CLOBBER)
+    return more - 1;
+  else
+    return more;
+}
+
+static void
+s390_sched_init (FILE *file ATTRIBUTE_UNUSED,
+		 int verbose ATTRIBUTE_UNUSED,
+		 int max_ready ATTRIBUTE_UNUSED)
+{
+  last_scheduled_insn = NULL_RTX;
+}
 
 /* Initialize GCC target structure.  */
 
@@ -9931,6 +10172,13 @@ s390_reorg (void)
 #define TARGET_SCHED_ISSUE_RATE s390_issue_rate
 #undef TARGET_SCHED_FIRST_CYCLE_MULTIPASS_DFA_LOOKAHEAD
 #define TARGET_SCHED_FIRST_CYCLE_MULTIPASS_DFA_LOOKAHEAD s390_first_cycle_multipass_dfa_lookahead
+
+#undef TARGET_SCHED_VARIABLE_ISSUE
+#define TARGET_SCHED_VARIABLE_ISSUE s390_sched_variable_issue
+#undef TARGET_SCHED_REORDER
+#define TARGET_SCHED_REORDER s390_sched_reorder
+#undef TARGET_SCHED_INIT
+#define TARGET_SCHED_INIT s390_sched_init
 
 #undef TARGET_CANNOT_COPY_INSN_P
 #define TARGET_CANNOT_COPY_INSN_P s390_cannot_copy_insn_p

@@ -2463,7 +2463,7 @@ printing with programs such as @command{dvips}.  Alternately, by using
 @samp{make pdf} in place of @samp{make dvi}, you can create documentation
 in the form of @file{.pdf} files; this requires @command{texi2pdf}, which
 is included with Texinfo version 4.8 and later.  You can also
-@uref{http://www.gnu.org/order/order.html,,buy printed manuals from the
+@uref{http://shop.fsf.org/,,buy printed manuals from the
 Free Software Foundation}, though such manuals may not be for the most
 recent version of GCC@.
 
@@ -2512,7 +2512,7 @@ AIX:
 @uref{http://pware.hvcc.edu,,Hudson Valley Community College Open Source Software for IBM System p};
 
 @item
-@uref{http://www.perzl.org/aix,,AIX 5L and 6 Open Source Packages}.
+@uref{http://www.perzl.org/aix/,,AIX 5L and 6 Open Source Packages}.
 @end itemize
 
 @item
@@ -2647,6 +2647,8 @@ information are.
 @uref{#x-x-linux-gnu,,*-*-linux-gnu}
 @item
 @uref{#ix86-x-linux,,i?86-*-linux*}
+@item
+@uref{#ix86-x-solaris289,,i?86-*-solaris2.[89]}
 @item
 @uref{#ix86-x-solaris210,,i?86-*-solaris2.10}
 @item
@@ -2886,8 +2888,6 @@ can also be obtained from:
 @itemize @bullet
 @item
 @uref{http://www.nongnu.org/avr/,,http://www.nongnu.org/avr/}
-@item
-@uref{http://home.overta.ru/users/denisc/,,http://home.overta.ru/users/denisc/}
 @item
 @uref{http://www.amelek.gda.pl/avr/,,http://www.amelek.gda.pl/avr/}
 @end itemize
@@ -3263,6 +3263,26 @@ See @uref{http://gcc.gnu.org/PR10877,,bug 10877} for more information.
 If you receive Signal 11 errors when building on GNU/Linux, then it is
 possible you have a hardware problem.  Further information on this can be
 found on @uref{http://www.bitwizard.nl/sig11/,,www.bitwizard.nl}.
+
+@html
+<hr />
+@end html
+@heading @anchor{ix86-x-solaris289}i?86-*-solaris2.[89]
+The Sun assembler in Solaris 8 and 9 has several bugs and limitations.
+While GCC works around them, several features are missing, so it is
+@c FIXME: which ones?
+recommended to use the GNU assembler instead.  There is no bundled
+version, but the current version, from GNU binutils 2.20.1, is known to
+work.
+
+Solaris~2/x86 doesn't support the execution of SSE/SSE2 instructions
+before Solaris~9 4/04, even if the CPU supports them.  Programs will
+receive @code{SIGILL} if they try.  The fix is available both in
+Solaris~9 Update~6 and kernel patch 112234-12 or newer.  There is no
+corresponding patch for Solaris 8.  To avoid this problem,
+@option{-march} defaults to @samp{pentiumpro} on Solaris 8 and 9.  If
+you have the patch installed, you can configure GCC with an appropriate
+@option{--with-arch} option, but need GNU @command{as} for SSE2 support.
 
 @html
 <hr />

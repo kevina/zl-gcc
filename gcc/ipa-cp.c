@@ -191,10 +191,32 @@ ipcp_analyze_node (struct cgraph_node *node)
 static void
 ipcp_update_cloned_node (struct cgraph_node *new_node)
 {
+  basic_block bb;
+  gimple_stmt_iterator gsi;
+
   /* We might've introduced new direct calls.  */
   push_cfun (DECL_STRUCT_FUNCTION (new_node->decl));
   current_function_decl = new_node->decl;
-  rebuild_cgraph_edges ();
+
+  FOR_EACH_BB (bb)
+    for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+      {
+	gimple stmt = gsi_stmt (gsi);
+	tree decl;
+
+	if (is_gimple_call (stmt)
+	    && (decl = gimple_call_fndecl (stmt))
+	    && !cgraph_edge (new_node, stmt))
+	  {
+	    struct cgraph_edge *new_edge;
+
+	    new_edge = cgraph_create_edge (new_node, cgraph_node (decl), stmt,
+					   bb->count,
+					   compute_call_stmt_bb_frequency (bb),
+					   bb->loop_depth);
+	    new_edge->indirect_call = 1;
+	  }
+      }
 
   /* Indirect inlinng rely on fact that we've already analyzed
      the body..  */
@@ -466,6 +488,7 @@ ipcp_cloning_candidate_p (struct cgraph_node *node)
       if (dump_file)
 	fprintf (dump_file, "Not considering %s for cloning; no hot calls.\n",
 		 cgraph_node_name (node));
+      return false;
     }
   if (dump_file)
     fprintf (dump_file, "Considering %s for cloning.\n",
@@ -485,7 +508,7 @@ ipcp_initialize_node_lattices (struct cgraph_node *node)
 
   if (ipa_is_called_with_var_arguments (info))
     type = IPA_BOTTOM;
-  else if (!node->needed)
+  else if (!node->needed && !node->local.externally_visible)
     type = IPA_TOP;
   /* When cloning is allowed, we can assume that externally visible functions
      are not called.  We will compensate this by cloning later.  */
@@ -959,7 +982,9 @@ ipcp_update_callgraph (void)
 	for (cs = node->callers; cs; cs = next)
 	  {
 	    next = cs->next_caller;
-	    if (ipcp_node_is_clone (cs->caller) || !ipcp_need_redirect_p (cs))
+	    if (!cs->indirect_call
+		&& (ipcp_node_is_clone (cs->caller)
+		    || !ipcp_need_redirect_p (cs)))
 	      {
 		gimple new_stmt;
 		gimple_stmt_iterator gsi;

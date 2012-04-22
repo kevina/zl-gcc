@@ -1,3 +1,66 @@
+2012-03-13  Release Manager
+
+	* GCC 4.4.7 released.
+
+2011-06-27  Hans-Peter Nilsson  <hp@axis.com>
+
+	* configure.ac (cris-*-* | crisv32-*-*, mmix-*-*): Add
+	target-libiberty to skipdirs.
+	* configure: Regenerate.
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2010-10-02  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
+
+	PR bootstrap/44621
+	* configure.ac: Fix unportable shell quoting.
+	* configure: Regenerate.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-06-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-03-01  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libstdc++/32499
+	* configure.ac (RANLIB): Default to true.
+	(STRIP): Likewise.
+	(RANLIB_FOR_TARGET): Remove superfluous : argument.
+	* configure: Regenerate.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-11-23  Ben Elliston  <bje@au.ibm.com>
+
+	* config.sub, config.guess: Update from upstream sources.
+
+2009-10-15  Release Manager
+
+	* GCC 4.4.2 released.
+
+2009-07-22  Release Manager
+
+	* GCC 4.4.1 released.
+
+2009-04-25  Kaveh R. Ghazi  <ghazi@caip.rutgers.edu>
+
+	PR bootstrap/39739
+	* configure.ac (extra_mpfr_configure_flags): Set and AC_SUBST.
+	* Makefile.def (module=mpfr): Use extra_mpfr_configure_flags.
+
+	* configure, Makefile.in: Regenerate.
+
 2009-04-21  Release Manager
 
 	* GCC 4.4.0 released.
