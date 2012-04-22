@@ -349,6 +349,7 @@ const struct gcc_debug_hooks dbx_debug_hooks =
 {
   dbxout_init,
   dbxout_finish,
+  debug_nothing_void,
   debug_nothing_int_charstar,
   debug_nothing_int_charstar,
   dbxout_start_source_file,
@@ -385,6 +386,7 @@ const struct gcc_debug_hooks xcoff_debug_hooks =
 {
   dbxout_init,
   dbxout_finish,
+  debug_nothing_void,
   debug_nothing_int_charstar,
   debug_nothing_int_charstar,
   dbxout_start_source_file,
@@ -2761,9 +2763,15 @@ dbxout_symbol (tree decl, int local ATTRIBUTE_UNUSED)
       }
 
     case PARM_DECL:
-      /* Parm decls go in their own separate chains
-	 and are output by dbxout_reg_parms and dbxout_parms.  */
-      gcc_unreachable ();
+      if (DECL_HAS_VALUE_EXPR_P (decl))
+	decl = DECL_VALUE_EXPR (decl);
+
+      /* PARM_DECLs go in their own separate chain and are output by
+	 dbxout_reg_parms and dbxout_parms, except for those that are
+	 disguised VAR_DECLs like Out parameters in Ada.  */
+      gcc_assert (TREE_CODE (decl) == VAR_DECL);
+
+      /* ... fall through ...  */
 
     case RESULT_DECL:
     case VAR_DECL:
@@ -3593,7 +3601,7 @@ dbxout_block (tree block, int depth, tree args)
   while (block)
     {
       /* Ignore blocks never expanded or otherwise marked as real.  */
-      if (TREE_ASM_WRITTEN (block))
+      if (TREE_USED (block) && TREE_ASM_WRITTEN (block))
 	{
 	  int did_output;
 	  int blocknum = BLOCK_NUMBER (block);

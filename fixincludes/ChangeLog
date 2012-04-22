@@ -1,3 +1,91 @@
+2012-03-13  Release Manager
+
+	* GCC 4.4.7 released.
+
+2011-04-16  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR other/48639
+	* tests/base/pthread.h [IRIX_PTHREAD_INIT_CHECK]: Move around.
+
+2011-04-16  Release Manager
+
+	* GCC 4.4.6 released.
+
+2010-12-13  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-11-09  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* inclhack.def (irix_pthread_init): New fix.
+	* fixincl.x: Regenerate.
+	* tests/base/pthread.h [IRIX_PTHREAD_INIT_CHECK]: New test.
+
+2010-10-21  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-10-20  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR c++/46024
+	* inclhack.def (solaris_sys_va_list): New fix.
+	* fixincl.x: Regenerate.
+	* tests/base/sys/va_list.h: New test.
+
+2010-10-01  Release Manager
+
+	* GCC 4.4.5 released.
+
+2010-07-15  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-07-12  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* inclhack.def (solaris_cond_init): New fix.
+	* fixincl.x: Regenerate.
+	* tests/base/pthread.h [SOLARIS_COND_INIT_CHECK]: New test.
+	[SOLARIS_MUTEX_INIT_2_CHECK]: Adapt.
+
+2010-06-02  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2010-03-31  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* inclhack.def (alpha_assert): Allow for more whitespace in
+	select.
+	* fixincl.x: Regenerate.
+
+2010-06-02  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline:
+	2009-09-02  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libfortran/41169
+	* inclhack.def (irix_complex): New fix.
+	(solaris_complex): Likewise.
+	* fixincl.x: Regenerate.
+	* tests/base/complex.h [IRIX_COMPLEX_CHECK, SOLARIS_COMPLEX_CHECK]:
+	New tests.
+
+	2009-09-08  Ralf Wildenhues  <Ralf.Wildenhues@gmx.de>
+
+	* inclhack.def (solaris_complex): Remove superfluous backslashes from
+	replacement string.  Replace \+ operator with \{1,\}.
+
+2010-04-29  Release Manager
+
+	* GCC 4.4.4 released.
+
+2010-01-21  Release Manager
+
+	* GCC 4.4.3 released.
+
+2009-10-15  Release Manager
+
+	* GCC 4.4.2 released.
+
+2009-07-22  Release Manager
+
+	* GCC 4.4.1 released.
+
 2009-04-21  Release Manager
 
 	* GCC 4.4.0 released.

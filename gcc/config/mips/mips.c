@@ -2328,6 +2328,28 @@ mips_emit_move (rtx dest, rtx src)
 	  : emit_move_insn_1 (dest, src));
 }
 
+/* Emit an instruction of the form (set TARGET (CODE OP0)).  */
+
+static void
+mips_emit_unary (enum rtx_code code, rtx target, rtx op0)
+{
+  emit_insn (gen_rtx_SET (VOIDmode, target,
+			  gen_rtx_fmt_e (code, GET_MODE (op0), op0)));
+}
+
+/* Compute (CODE OP0) and store the result in a new register of mode MODE.
+   Return that new register.  */
+
+static rtx
+mips_force_unary (enum machine_mode mode, enum rtx_code code, rtx op0)
+{
+  rtx reg;
+
+  reg = gen_reg_rtx (mode);
+  mips_emit_unary (code, reg, op0);
+  return reg;
+}
+
 /* Emit an instruction of the form (set TARGET (CODE OP0 OP1)).  */
 
 static void
@@ -6399,7 +6421,14 @@ mips_expand_block_move (rtx dest, rtx src, rtx length)
 void
 mips_expand_synci_loop (rtx begin, rtx end)
 {
-  rtx inc, label, cmp, cmp_result;
+  rtx inc, label, end_label, cmp_result, mask, length;
+
+  /* Create end_label.  */
+  end_label = gen_label_rtx ();
+
+  /* Check if begin equals end.  */
+  cmp_result = gen_rtx_EQ (VOIDmode, begin, end);
+  emit_jump_insn (gen_condjump (cmp_result, end_label));
 
   /* Load INC with the cache line size (rdhwr INC,$1).  */
   inc = gen_reg_rtx (Pmode);
@@ -6407,18 +6436,36 @@ mips_expand_synci_loop (rtx begin, rtx end)
 	     ? gen_rdhwr_synci_step_si (inc)
 	     : gen_rdhwr_synci_step_di (inc));
 
+  /* Check if inc is 0.  */
+  cmp_result = gen_rtx_EQ (VOIDmode, inc, const0_rtx);
+  emit_jump_insn (gen_condjump (cmp_result, end_label));
+
+  /* Calculate mask.  */
+  mask = mips_force_unary (Pmode, NEG, inc);
+
+  /* Mask out begin by mask.  */
+  begin = mips_force_binary (Pmode, AND, begin, mask);
+
+  /* Calculate length.  */
+  length = mips_force_binary (Pmode, MINUS, end, begin);
+
   /* Loop back to here.  */
   label = gen_label_rtx ();
   emit_label (label);
 
   emit_insn (gen_synci (begin));
 
-  cmp = mips_force_binary (Pmode, GTU, begin, end);
+  /* Update length.  */
+  mips_emit_binary (MINUS, length, length, inc);
 
+  /* Update begin.  */
   mips_emit_binary (PLUS, begin, begin, inc);
 
-  cmp_result = gen_rtx_EQ (VOIDmode, cmp, const0_rtx);
+  /* Check if length is greater than 0.  */
+  cmp_result = gen_rtx_GT (VOIDmode, length, const0_rtx);
   emit_jump_insn (gen_condjump (cmp_result, label));
+
+  emit_label (end_label);
 }
 
 /* Expand a QI or HI mode atomic memory operation.
@@ -8448,7 +8495,7 @@ mips_cfun_call_saved_reg_p (unsigned int regno)
      property here.  */
   return (regno == GLOBAL_POINTER_REGNUM
 	  ? TARGET_CALL_SAVED_GP
-	  : !call_really_used_regs[regno]);
+	  : !global_regs[regno] && !call_really_used_regs[regno]);
 }
 
 /* Return true if the function body might clobber register REGNO.
@@ -13984,26 +14031,46 @@ mips_override_options (void)
   if (TARGET_DSPR2)
     target_flags |= MASK_DSP;
 
-  /* .eh_frame addresses should be the same width as a C pointer.
-     Most MIPS ABIs support only one pointer size, so the assembler
-     will usually know exactly how big an .eh_frame address is.
+  /* Use the traditional method of generating .eh_frames.
+     We need this for two reasons:
 
-     Unfortunately, this is not true of the 64-bit EABI.  The ABI was
-     originally defined to use 64-bit pointers (i.e. it is LP64), and
-     this is still the default mode.  However, we also support an n32-like
-     ILP32 mode, which is selected by -mlong32.  The problem is that the
-     assembler has traditionally not had an -mlong option, so it has
-     traditionally not known whether we're using the ILP32 or LP64 form.
+     - .eh_frame addresses should be the same width as a C pointer.
+       Most MIPS ABIs support only one pointer size, so the assembler
+       will usually know exactly how big an .eh_frame address is.
 
-     As it happens, gas versions up to and including 2.19 use _32-bit_
-     addresses for EABI64 .cfi_* directives.  This is wrong for the
-     default LP64 mode, so we can't use the directives by default.
-     Moreover, since gas's current behavior is at odds with gcc's
-     default behavior, it seems unwise to rely on future versions
-     of gas behaving the same way.  We therefore avoid using .cfi
-     directives for -mlong32 as well.  */
-  if (mips_abi == ABI_EABI && TARGET_64BIT)
-    flag_dwarf2_cfi_asm = 0;
+       Unfortunately, this is not true of the 64-bit EABI.  The ABI was
+       originally defined to use 64-bit pointers (i.e. it is LP64), and
+       this is still the default mode.  However, we also support an n32-like
+       ILP32 mode, which is selected by -mlong32.  The problem is that the
+       assembler has traditionally not had an -mlong option, so it has
+       traditionally not known whether we're using the ILP32 or LP64 form.
+
+       As it happens, gas versions up to and including 2.19 use _32-bit_
+       addresses for EABI64 .cfi_* directives.  This is wrong for the
+       default LP64 mode, so we can't use the directives by default.
+       Moreover, since gas's current behavior is at odds with gcc's
+       default behavior, it seems unwise to rely on future versions
+       of gas behaving the same way.  We therefore avoid using .cfi
+       directives for -mlong32 as well.
+
+     - .cfi* directives generate read-only .eh_frame sections.
+       However, MIPS has traditionally not allowed directives like:
+
+	    .long   x-.
+
+       in cases where "x" is in a different section, or is not defined
+       in the same assembly file.  We have therefore traditionally
+       used absolute addresses and a writable .eh_frame instead.
+
+       The linker is able to convert most of these absolute addresses
+       into PC-relative form where doing so is necessary to avoid
+       relocations.  However, until 2.21, it wasn't able to do this
+       for indirect encodings or personality routines.
+
+       GNU ld 2.21 and GCC 4.5 have support for read-only .eh_frames,
+       but for the time being, we should stick to the approach used
+       in 4.3 and earlier.  */
+  flag_dwarf2_cfi_asm = 0;
 
   mips_init_print_operand_punct ();
 

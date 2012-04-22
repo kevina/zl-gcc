@@ -1320,11 +1320,7 @@ follow_ssa_edge_in_condition_phi (struct loop *loop,
 
   *evolution_of_loop = evolution_of_branch;
 
-  /* If the phi node is just a copy, do not increase the limit.  */
   n = gimple_phi_num_args (condition_phi);
-  if (n > 1)
-    limit++;
-
   for (i = 1; i < n; i++)
     {
       /* Quickly give up when the evolution of one of the branches is
@@ -1332,10 +1328,12 @@ follow_ssa_edge_in_condition_phi (struct loop *loop,
       if (*evolution_of_loop == chrec_dont_know)
 	return t_true;
 
+      /* Increase the limit by the PHI argument number to avoid exponential
+	 time and memory complexity.  */
       res = follow_ssa_edge_in_condition_phi_branch (i, loop, condition_phi,
 						     halting_phi,
 						     &evolution_of_branch,
-						     init, limit);
+						     init, limit + i);
       if (res == t_false || res == t_dont_know)
 	return res;
 
@@ -2188,8 +2186,19 @@ instantiate_scev_1 (basic_block instantiate_below,
       if (CHREC_LEFT (chrec) != op0
 	  || CHREC_RIGHT (chrec) != op1)
 	{
+	  unsigned var = CHREC_VARIABLE (chrec);
+
+	  /* When the instantiated stride or base has an evolution in an
+	     innermost loop, return chrec_dont_know, as this is not a
+	     valid SCEV representation.  In the reduced testcase for
+	     PR40281 we would have {0, +, {1, +, 1}_2}_1 that has no
+	     meaning.  */
+	  if ((tree_is_chrec (op0) && CHREC_VARIABLE (op0) > var)
+	      || (tree_is_chrec (op1) && CHREC_VARIABLE (op1) > var))
+	    return chrec_dont_know;
+
 	  op1 = chrec_convert_rhs (chrec_type (op0), op1, NULL);
-	  chrec = build_polynomial_chrec (CHREC_VARIABLE (chrec), op0, op1);
+	  chrec = build_polynomial_chrec (var, op0, op1);
 	}
       return chrec;
 

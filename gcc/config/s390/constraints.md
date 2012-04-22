@@ -66,9 +66,14 @@
 ;;    B -- Multiple letter constraint followed by Q, R, S, or T:
 ;;         Memory reference of the type specified by second letter that
 ;;         does *not* refer to a literal pool entry.
-;;    U -- Pointer with short displacement.
-;;    W -- Pointer with long displacement.
+;;    U -- Pointer with short displacement. (deprecated - use ZQZR)
+;;    W -- Pointer with long displacement. (deprecated - use ZSZT)
 ;;    Y -- Shift count operand.
+;;    ZQ -- Pointer without index register and with short displacement.
+;;    ZR -- Pointer with index register and short displacement.
+;;    ZS -- Pointer without index register but with long displacement.
+;;    ZT -- Pointer with index register and long displacement.
+;;
 ;;
 
 
@@ -129,13 +134,13 @@
 (define_constraint "I"
   "An 8-bit constant (0..255)"
   (and (match_code "const_int")
-       (match_test "(unsigned int) ival <= 255")))
+       (match_test "(unsigned HOST_WIDE_INT) ival <= 255")))
 
 
 (define_constraint "J"
   "A 12-bit constant (0..4095)"
   (and (match_code "const_int")
-       (match_test "(unsigned int) ival <= 4095")))
+       (match_test "(unsigned HOST_WIDE_INT) ival <= 4095")))
 
 
 (define_constraint "K"
@@ -462,11 +467,26 @@ constraint."
 
 
 (define_address_constraint "U"
-  "Pointer with short displacement"
+  "Pointer with short displacement. (deprecated - use ZQZR)"
   (match_test "s390_mem_constraint (\"U\", op)"))
 
-
-
 (define_address_constraint "W"
-  "Pointer with long displacement"
+  "Pointer with long displacement. (deprecated - use ZSZT)"
   (match_test "s390_mem_constraint (\"W\", op)"))
+
+
+(define_address_constraint "ZQ"
+  "Pointer without index register and with short displacement."
+  (match_test "s390_mem_constraint (\"ZQ\", op)"))
+
+(define_address_constraint "ZR"
+  "Pointer with index register and short displacement."
+  (match_test "s390_mem_constraint (\"ZR\", op)"))
+
+(define_address_constraint "ZS"
+  "Pointer without index register but with long displacement."
+  (match_test "s390_mem_constraint (\"ZS\", op)"))
+
+(define_address_constraint "ZT"
+  "Pointer with index register and long displacement."
+  (match_test "s390_mem_constraint (\"ZT\", op)"))

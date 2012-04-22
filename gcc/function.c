@@ -132,6 +132,10 @@ static VEC(int,heap) *epilogue;
    in this function.  */
 static VEC(int,heap) *sibcall_epilogue;
 
+
+htab_t types_used_by_vars_hash = NULL;
+tree types_used_by_cur_var_decl = NULL;
+
 /* Forward declarations.  */
 
 static struct temp_slot *find_temp_slot_from_address (rtx);
@@ -1597,7 +1601,13 @@ instantiate_virtual_regs_in_insn (rtx insn)
       if (!safe_insn_predicate (insn_code, i, x))
 	{
 	  start_sequence ();
-	  x = force_reg (insn_data[insn_code].operand[i].mode, x);
+	  if (REG_P (x))
+	    {
+	      gcc_assert (REGNO (x) <= LAST_VIRTUAL_REGISTER);
+	      x = copy_to_reg (x);
+	    }
+	  else
+	    x = force_reg (insn_data[insn_code].operand[i].mode, x);
 	  seq = get_insns ();
 	  end_sequence ();
 	  if (seq)
@@ -2977,9 +2987,17 @@ assign_parm_setup_stack (struct assign_parm_data_all *all, tree parm,
 					  TYPE_UNSIGNED (TREE_TYPE (parm)));
 
       if (data->stack_parm)
-	/* ??? This may need a big-endian conversion on sparc64.  */
-	data->stack_parm
-	  = adjust_address (data->stack_parm, data->nominal_mode, 0);
+	{
+	  int offset = subreg_lowpart_offset (data->nominal_mode,
+					      GET_MODE (data->stack_parm));
+	  /* ??? This may need a big-endian conversion on sparc64.  */
+	  data->stack_parm
+	    = adjust_address (data->stack_parm, data->nominal_mode, 0);
+	  if (offset && MEM_OFFSET (data->stack_parm))
+	    set_mem_offset (data->stack_parm,
+			    plus_constant (MEM_OFFSET (data->stack_parm),
+					   offset));
+	}
     }
 
   if (data->entry_parm != data->stack_parm)
@@ -3139,8 +3157,12 @@ assign_parms (tree fndecl)
         {
           unsigned int align = FUNCTION_ARG_BOUNDARY (data.promoted_mode,
 						      data.passed_type);
+	  align = MINIMUM_ALIGNMENT (data.passed_type, data.promoted_mode,
+				     align);
 	  if (TYPE_ALIGN (data.nominal_type) > align)
-	    align = TYPE_ALIGN (data.passed_type);
+	    align = MINIMUM_ALIGNMENT (data.nominal_type,
+				       TYPE_MODE (data.nominal_type),
+				       TYPE_ALIGN (data.nominal_type));
 	  if (crtl->stack_alignment_estimated < align)
 	    {
 	      gcc_assert (!crtl->stack_realign_processed);
@@ -3385,12 +3407,10 @@ gimplify_parameters (void)
 		  DECL_IGNORED_P (local) = 0;
 		  /* If PARM was addressable, move that flag over
 		     to the local copy, as its address will be taken,
-		     not the PARMs.  */
+		     not the PARMs.  Keep the parms address taken
+		     as we'll query that flag during gimplification.  */
 		  if (TREE_ADDRESSABLE (parm))
-		    {
-		      TREE_ADDRESSABLE (parm) = 0;
-		      TREE_ADDRESSABLE (local) = 1;
-		    }
+		    TREE_ADDRESSABLE (local) = 1;
 		}
 	      else
 		{
@@ -4258,12 +4278,8 @@ stack_protect_prologue (void)
   tree guard_decl = targetm.stack_protect_guard ();
   rtx x, y;
 
-  /* Avoid expand_expr here, because we don't want guard_decl pulled
-     into registers unless absolutely necessary.  And we know that
-     crtl->stack_protect_guard is a local stack slot, so this skips
-     all the fluff.  */
-  x = validize_mem (DECL_RTL (crtl->stack_protect_guard));
-  y = validize_mem (DECL_RTL (guard_decl));
+  x = expand_normal (crtl->stack_protect_guard);
+  y = expand_normal (guard_decl);
 
   /* Allow the target to copy from Y to X without leaking Y into a
      register.  */
@@ -4296,12 +4312,8 @@ stack_protect_epilogue (void)
   rtx label = gen_label_rtx ();
   rtx x, y, tmp;
 
-  /* Avoid expand_expr here, because we don't want guard_decl pulled
-     into registers unless absolutely necessary.  And we know that
-     crtl->stack_protect_guard is a local stack slot, so this skips
-     all the fluff.  */
-  x = validize_mem (DECL_RTL (crtl->stack_protect_guard));
-  y = validize_mem (DECL_RTL (guard_decl));
+  x = expand_normal (crtl->stack_protect_guard);
+  y = expand_normal (guard_decl);
 
   /* Allow the target to compare Y with X without leaking either into
      a register.  */
@@ -5360,6 +5372,7 @@ rest_of_handle_check_leaf_regs (void)
 }
 
 /* Insert a TYPE into the used types hash table of CFUN.  */
+
 static void
 used_types_insert_helper (tree type, struct function *func)
 {
@@ -5384,7 +5397,81 @@ used_types_insert (tree t)
     t = TREE_TYPE (t);
   t = TYPE_MAIN_VARIANT (t);
   if (debug_info_level > DINFO_LEVEL_NONE)
-    used_types_insert_helper (t, cfun);
+    {
+      if (cfun)
+	used_types_insert_helper (t, cfun);
+      else
+	/* So this might be a type referenced by a global variable.
+	   Record that type so that we can later decide to emit its debug
+	   information.  */
+	types_used_by_cur_var_decl =
+	  tree_cons (t, NULL, types_used_by_cur_var_decl);
+
+    }
+}
+
+/* Helper to Hash a struct types_used_by_vars_entry.  */
+
+static hashval_t
+hash_types_used_by_vars_entry (const struct types_used_by_vars_entry *entry)
+{
+  gcc_assert (entry && entry->var_decl && entry->type);
+
+  return iterative_hash_object (entry->type,
+				iterative_hash_object (entry->var_decl, 0));
+}
+
+/* Hash function of the types_used_by_vars_entry hash table.  */
+
+hashval_t
+types_used_by_vars_do_hash (const void *x)
+{
+  const struct types_used_by_vars_entry *entry =
+    (const struct types_used_by_vars_entry *) x;
+
+  return hash_types_used_by_vars_entry (entry);
+}
+
+/*Equality function of the types_used_by_vars_entry hash table.  */
+
+int
+types_used_by_vars_eq (const void *x1, const void *x2)
+{
+  const struct types_used_by_vars_entry *e1 =
+    (const struct types_used_by_vars_entry *) x1;
+  const struct types_used_by_vars_entry *e2 =
+    (const struct types_used_by_vars_entry *)x2;
+
+  return (e1->var_decl == e2->var_decl && e1->type == e2->type);
+}
+
+/* Inserts an entry into the types_used_by_vars_hash hash table. */
+
+void
+types_used_by_var_decl_insert (tree type, tree var_decl)
+{
+  if (type != NULL && var_decl != NULL)
+    {
+      void **slot;
+      struct types_used_by_vars_entry e;
+      e.var_decl = var_decl;
+      e.type = type;
+      if (types_used_by_vars_hash == NULL)
+	types_used_by_vars_hash =
+	  htab_create_ggc (37, types_used_by_vars_do_hash,
+			   types_used_by_vars_eq, NULL);
+      slot = htab_find_slot_with_hash (types_used_by_vars_hash, &e,
+				       hash_types_used_by_vars_entry (&e), INSERT);
+      if (*slot == NULL)
+	{
+	  struct types_used_by_vars_entry *entry;
+	  entry = (struct types_used_by_vars_entry*) ggc_alloc
+		    (sizeof (struct types_used_by_vars_entry));
+	  entry->type = type;
+	  entry->var_decl = var_decl;
+	  *slot = entry;
+	}
+    }
 }
 
 struct rtl_opt_pass pass_leaf_regs =

@@ -1,6 +1,6 @@
 /* Subroutines for insn-output.c for SPARC.
    Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010
    Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com)
    64-bit SPARC-V9 support by Michael Tiemann, Jim Wilson, and Doug Evans,
@@ -371,8 +371,9 @@ static int save_or_restore_regs (int, int, rtx, int, int);
 static void emit_save_or_restore_regs (int);
 static void sparc_asm_function_prologue (FILE *, HOST_WIDE_INT);
 static void sparc_asm_function_epilogue (FILE *, HOST_WIDE_INT);
-#ifdef OBJECT_FORMAT_ELF
-static void sparc_elf_asm_named_section (const char *, unsigned int, tree);
+#if defined (OBJECT_FORMAT_ELF)
+static void sparc_elf_asm_named_section (const char *, unsigned int, tree)
+    ATTRIBUTE_UNUSED;
 #endif
 
 static int sparc_adjust_cost (rtx, rtx, rtx, int);
@@ -412,6 +413,9 @@ static bool sparc_strict_argument_naming (CUMULATIVE_ARGS *);
 static void sparc_va_start (tree, rtx);
 static tree sparc_gimplify_va_arg (tree, tree, gimple_seq *, gimple_seq *);
 static bool sparc_vector_mode_supported_p (enum machine_mode);
+static bool sparc_tls_referenced_p (rtx);
+static rtx legitimize_tls_address (rtx);
+static rtx legitimize_pic_address (rtx, rtx);
 static bool sparc_pass_by_reference (CUMULATIVE_ARGS *,
 				     enum machine_mode, const_tree, bool);
 static int sparc_arg_partial_bytes (CUMULATIVE_ARGS *,
@@ -986,34 +990,17 @@ sparc_expand_move (enum machine_mode mode, rtx *operands)
   /* Fixup TLS cases.  */
   if (TARGET_HAVE_TLS
       && CONSTANT_P (operands[1])
-      && GET_CODE (operands[1]) != HIGH
       && sparc_tls_referenced_p (operands [1]))
     {
-      rtx sym = operands[1];
-      rtx addend = NULL;
-
-      if (GET_CODE (sym) == CONST && GET_CODE (XEXP (sym, 0)) == PLUS)
-	{
-	  addend = XEXP (XEXP (sym, 0), 1);
-	  sym = XEXP (XEXP (sym, 0), 0);
-	}
-
-      gcc_assert (SPARC_SYMBOL_REF_TLS_P (sym));
-
-      sym = legitimize_tls_address (sym);
-      if (addend)
-	{
-	  sym = gen_rtx_PLUS (mode, sym, addend);
-	  sym = force_operand (sym, operands[0]);
-	}
-      operands[1] = sym;
+      operands[1] = legitimize_tls_address (operands[1]);
+      return false;
     }
- 
+
   /* Fixup PIC cases.  */
   if (flag_pic && CONSTANT_P (operands[1]))
     {
       if (pic_address_needs_scratch (operands[1]))
-	operands[1] = legitimize_pic_address (operands[1], mode, 0);
+	operands[1] = legitimize_pic_address (operands[1], NULL_RTX);
 
       /* VxWorks does not impose a fixed gap between segments; the run-time
 	 gap can be different from the object-file gap.  We therefore can't
@@ -1041,10 +1028,8 @@ sparc_expand_move (enum machine_mode mode, rtx *operands)
       if (symbolic_operand (operands[1], mode))
 	{
 	  operands[1] = legitimize_pic_address (operands[1],
-						mode,
-						(reload_in_progress ?
-						 operands[0] :
-						 NULL_RTX));
+						reload_in_progress
+						? operands[0] : NULL_RTX);
 	  return false;
 	}
     }
@@ -2651,11 +2636,6 @@ eligible_for_return_delay (rtx trial)
   if (get_attr_length (trial) != 1)
     return 0;
 
-  /* If there are any call-saved registers, we should scan TRIAL if it
-     does not reference them.  For now just make it easy.  */
-  if (num_gfregs)
-    return 0;
-
   /* If the function uses __builtin_eh_return, the eh_return machinery
      occupies the delay slot.  */
   if (crtl->calls_eh_return)
@@ -2865,23 +2845,11 @@ pic_address_needs_scratch (rtx x)
 bool
 legitimate_constant_p (rtx x)
 {
-  rtx inner;
-
   switch (GET_CODE (x))
     {
-    case SYMBOL_REF:
-      /* TLS symbols are not constant.  */
-      if (SYMBOL_REF_TLS_MODEL (x))
-	return false;
-      break;
-
     case CONST:
-      inner = XEXP (x, 0);
-
-      /* Offsets of TLS symbols are never valid.
-	 Discourage CSE from creating them.  */
-      if (GET_CODE (inner) == PLUS
-	  && SPARC_SYMBOL_REF_TLS_P (XEXP (inner, 0)))
+    case SYMBOL_REF:
+      if (sparc_tls_referenced_p (x))
 	return false;
       break;
 
@@ -2948,10 +2916,7 @@ legitimate_pic_operand_p (rtx x)
 {
   if (pic_address_needs_scratch (x))
     return false;
-  if (SPARC_SYMBOL_REF_TLS_P (x)
-      || (GET_CODE (x) == CONST
-	  && GET_CODE (XEXP (x, 0)) == PLUS
-	  && SPARC_SYMBOL_REF_TLS_P (XEXP (XEXP (x, 0), 0))))
+  if (sparc_tls_referenced_p (x))
     return false;
   return true;
 }
@@ -2989,7 +2954,7 @@ legitimate_address_p (enum machine_mode mode, rtx addr, int strict)
 	   && GET_CODE (rs2) != SUBREG
 	   && GET_CODE (rs2) != LO_SUM
 	   && GET_CODE (rs2) != MEM
-	   && ! SPARC_SYMBOL_REF_TLS_P (rs2)
+	   && !(GET_CODE (rs2) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (rs2))
 	   && (! symbolic_operand (rs2, VOIDmode) || mode == Pmode)
 	   && (GET_CODE (rs2) != CONST_INT || SMALL_INT (rs2)))
 	  || ((REG_P (rs1)
@@ -3029,7 +2994,8 @@ legitimate_address_p (enum machine_mode mode, rtx addr, int strict)
 	  rs2 = NULL;
 	  imm1 = XEXP (rs1, 1);
 	  rs1 = XEXP (rs1, 0);
-	  if (! CONSTANT_P (imm1) || SPARC_SYMBOL_REF_TLS_P (rs1))
+	  if (!CONSTANT_P (imm1)
+	      || (GET_CODE (rs1) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (rs1)))
 	    return 0;
 	}
     }
@@ -3038,7 +3004,8 @@ legitimate_address_p (enum machine_mode mode, rtx addr, int strict)
       rs1 = XEXP (addr, 0);
       imm1 = XEXP (addr, 1);
 
-      if (! CONSTANT_P (imm1) || SPARC_SYMBOL_REF_TLS_P (rs1))
+      if (!CONSTANT_P (imm1)
+	  || (GET_CODE (rs1) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (rs1)))
 	return 0;
 
       /* We can't allow TFmode in 32-bit mode, because an offset greater
@@ -3114,29 +3081,28 @@ sparc_tls_got (void)
   return temp;
 }
 
-/* Return 1 if *X is a thread-local symbol.  */
+/* Return true if X contains a thread-local symbol.  */
 
-static int
-sparc_tls_symbol_ref_1 (rtx *x, void *data ATTRIBUTE_UNUSED)
-{
-  return SPARC_SYMBOL_REF_TLS_P (*x);
-}
-
-/* Return 1 if X contains a thread-local symbol.  */
-
-bool
+static bool
 sparc_tls_referenced_p (rtx x)
 {
   if (!TARGET_HAVE_TLS)
     return false;
 
-  return for_each_rtx (&x, &sparc_tls_symbol_ref_1, 0);
+  if (GET_CODE (x) == CONST && GET_CODE (XEXP (x, 0)) == PLUS)
+    x = XEXP (XEXP (x, 0), 0);
+
+  if (GET_CODE (x) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (x))
+    return true;
+
+  /* That's all we handle in legitimize_tls_address for now.  */
+  return false;
 }
 
 /* ADDR contains a thread-local SYMBOL_REF.  Generate code to compute
    this (thread-local) address.  */
 
-rtx
+static rtx
 legitimize_tls_address (rtx addr)
 {
   rtx temp1, temp2, temp3, ret, o0, got, insn;
@@ -3260,21 +3226,34 @@ legitimize_tls_address (rtx addr)
 	gcc_unreachable ();
       }
 
+  else if (GET_CODE (addr) == CONST)
+    {
+      rtx base, offset;
+
+      gcc_assert (GET_CODE (XEXP (addr, 0)) == PLUS);
+
+      base = legitimize_tls_address (XEXP (XEXP (addr, 0), 0));
+      offset = XEXP (XEXP (addr, 0), 1);
+
+      base = force_operand (base, NULL_RTX);
+      if (!(GET_CODE (offset) == CONST_INT && SMALL_INT (offset)))
+	offset = force_reg (Pmode, offset);
+      ret = gen_rtx_PLUS (Pmode, base, offset);
+    }
+
   else
     gcc_unreachable ();  /* for now ... */
 
   return ret;
 }
 
-
 /* Legitimize PIC addresses.  If the address is already position-independent,
    we return ORIG.  Newly generated position-independent addresses go into a
    reg.  This is REG if nonzero, otherwise we allocate register(s) as
    necessary.  */
 
-rtx
-legitimize_pic_address (rtx orig, enum machine_mode mode ATTRIBUTE_UNUSED,
-			rtx reg)
+static rtx
+legitimize_pic_address (rtx orig, rtx reg)
 {
   if (GET_CODE (orig) == SYMBOL_REF
       /* See the comment in sparc_expand_move.  */
@@ -3341,9 +3320,9 @@ legitimize_pic_address (rtx orig, enum machine_mode mode ATTRIBUTE_UNUSED,
 	}
 
       gcc_assert (GET_CODE (XEXP (orig, 0)) == PLUS);
-      base = legitimize_pic_address (XEXP (XEXP (orig, 0), 0), Pmode, reg);
-      offset = legitimize_pic_address (XEXP (XEXP (orig, 0), 1), Pmode,
-			 	       base == reg ? 0 : reg);
+      base = legitimize_pic_address (XEXP (XEXP (orig, 0), 0), reg);
+      offset = legitimize_pic_address (XEXP (XEXP (orig, 0), 1),
+			 	       base == reg ? NULL_RTX : reg);
 
       if (GET_CODE (offset) == CONST_INT)
 	{
@@ -3395,10 +3374,10 @@ legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, enum machine_mode mode)
   if (x != orig_x && legitimate_address_p (mode, x, FALSE))
     return x;
 
-  if (SPARC_SYMBOL_REF_TLS_P (x))
+  if (sparc_tls_referenced_p (x))
     x = legitimize_tls_address (x);
   else if (flag_pic)
-    x = legitimize_pic_address (x, mode, 0);
+    x = legitimize_pic_address (x, NULL_RTX);
   else if (GET_CODE (x) == PLUS && CONSTANT_ADDRESS_P (XEXP (x, 1)))
     x = gen_rtx_PLUS (Pmode, XEXP (x, 0),
 		      copy_to_mode_reg (Pmode, XEXP (x, 1)));
@@ -3407,8 +3386,9 @@ legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, enum machine_mode mode)
 		      copy_to_mode_reg (Pmode, XEXP (x, 0)));
   else if (GET_CODE (x) == SYMBOL_REF
 	   || GET_CODE (x) == CONST
-           || GET_CODE (x) == LABEL_REF)
+	   || GET_CODE (x) == LABEL_REF)
     x = copy_to_suggested_reg (x, NULL_RTX, Pmode);
+
   return x;
 }
 
@@ -3937,7 +3917,7 @@ save_or_restore_regs (int low, int high, rtx base, int offset, int action)
 	    emit_move_insn (gen_rtx_REG (mode, regno), mem);
 
 	  /* Always preserve double-word alignment.  */
-	  offset = (offset + 7) & -8;
+	  offset = (offset + 8) & -8;
 	}
     }
 
@@ -4044,7 +4024,7 @@ sparc_expand_prologue (void)
      example, the regrename pass has special provisions to not rename to
      non-leaf registers in a leaf function.  */
   sparc_leaf_function_p
-    = optimize > 0 && leaf_function_p () && only_leaf_regs_used ();
+    = optimize > 0 && current_function_is_leaf && only_leaf_regs_used ();
 
   /* Need to use actual_fsize, since we are also allocating
      space for our callee (and our own register save area).  */
@@ -4170,6 +4150,7 @@ bool
 sparc_can_use_return_insn_p (void)
 {
   return sparc_prologue_data_valid_p
+	 && num_gfregs == 0
 	 && (actual_fsize == 0 || !sparc_leaf_function_p);
 }
   
@@ -4271,18 +4252,20 @@ output_return (rtx insn)
 	     machinery occupies the delay slot.  */
 	  gcc_assert (! final_sequence);
 
-	  if (! flag_delayed_branch)
-	    fputs ("\tadd\t%fp, %g1, %fp\n", asm_out_file);
+          if (flag_delayed_branch)
+	    {
+	      if (TARGET_V9)
+		fputs ("\treturn\t%i7+8\n", asm_out_file);
+	      else
+		fputs ("\trestore\n\tjmp\t%o7+8\n", asm_out_file);
 
-	  if (TARGET_V9)
-	    fputs ("\treturn\t%i7+8\n", asm_out_file);
+	      fputs ("\t add\t%sp, %g1, %sp\n", asm_out_file);
+	    }
 	  else
-	    fputs ("\trestore\n\tjmp\t%o7+8\n", asm_out_file);
-
-	  if (flag_delayed_branch)
-	    fputs ("\t add\t%sp, %g1, %sp\n", asm_out_file);
-	  else
-	    fputs ("\t nop\n", asm_out_file);
+	    {
+	      fputs ("\trestore\n\tadd\t%sp, %g1, %sp\n", asm_out_file);
+	      fputs ("\tjmp\t%o7+8\n\t nop\n", asm_out_file);
+	    }
 	}
       else if (final_sequence)
 	{
@@ -5433,14 +5416,13 @@ void
 function_arg_advance (struct sparc_args *cum, enum machine_mode mode,
 		      tree type, int named)
 {
-  int slotno, regno, padding;
+  int regno, padding;
 
   /* We pass 0 for incoming_p here, it doesn't matter.  */
-  slotno = function_arg_slotno (cum, mode, type, named, 0, &regno, &padding);
+  function_arg_slotno (cum, mode, type, named, 0, &regno, &padding);
 
-  /* If register required leading padding, add it.  */
-  if (slotno != -1)
-    cum->words += padding;
+  /* If argument requires leading padding, add it.  */
+  cum->words += padding;
 
   if (TARGET_ARCH32)
     {
@@ -7863,19 +7845,11 @@ sparc_profile_hook (int labelno)
     }
 }
 
-#ifdef OBJECT_FORMAT_ELF
+#if defined (OBJECT_FORMAT_ELF)
 static void
 sparc_elf_asm_named_section (const char *name, unsigned int flags,
 			     tree decl)
 {
-  if (flags & SECTION_MERGE)
-    {
-      /* entsize cannot be expressed in this section attributes
-	 encoding style.  */
-      default_elf_asm_named_section (name, flags, decl);
-      return;
-    }
-
   fprintf (asm_out_file, "\t.section\t\"%s\"", name);
 
   if (!(flags & SECTION_DEBUG))
@@ -8758,7 +8732,7 @@ sparc_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
 	  /* Delay emitting the PIC helper function because it needs to
 	     change the section and we are emitting assembly code.  */
 	  load_pic_register (true);  /* clobbers %o7 */
-	  scratch = legitimize_pic_address (funexp, Pmode, scratch);
+	  scratch = legitimize_pic_address (funexp, scratch);
 	  seq = get_insns ();
 	  end_sequence ();
 	  emit_and_preserve (seq, spill_reg, spill_reg2);

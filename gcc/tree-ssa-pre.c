@@ -396,10 +396,6 @@ typedef struct bb_bitmap_sets
 #define BB_DEFERRED(BB) ((bb_value_sets_t) ((BB)->aux))->deferred
 
 
-/* Maximal set of values, used to initialize the ANTIC problem, which
-   is an intersection problem.  */
-static bitmap_set_t maximal_set;
-
 /* Basic block list in postorder.  */
 static int *postorder;
 
@@ -456,9 +452,6 @@ static tree prephitemp;
 /* Set of blocks with statements that have had its EH information
    cleaned up.  */
 static bitmap need_eh_cleanup;
-
-/* Which expressions have been seen during a given phi translation.  */
-static bitmap seen_during_translate;
 
 /* The phi_translate_table caches phi translations for a given
    expression and predecessor.  */
@@ -1402,46 +1395,20 @@ get_representative_for (const pre_expr e)
 
 
 
+static pre_expr
+phi_translate (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
+	       basic_block pred, basic_block phiblock);
 
 /* Translate EXPR using phis in PHIBLOCK, so that it has the values of
-   the phis in PRED.  SEEN is a bitmap saying which expression we have
-   translated since we started translation of the toplevel expression.
-   Return NULL if we can't find a leader for each part of the
-   translated expression.  */
+   the phis in PRED.  Return NULL if we can't find a leader for each part
+   of the translated expression.  */
 
 static pre_expr
 phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
-		 basic_block pred, basic_block phiblock, bitmap seen)
+		 basic_block pred, basic_block phiblock)
 {
-  pre_expr oldexpr = expr;
-  pre_expr phitrans;
-
-  if (!expr)
-    return NULL;
-
-  if (value_id_constant_p (get_expr_value_id (expr)))
-    return expr;
-
-  phitrans = phi_trans_lookup (expr, pred);
-  if (phitrans)
-    return phitrans;
-
-  /* Prevent cycles when we have recursively dependent leaders.  This
-     can only happen when phi translating the maximal set.  */
-  if (seen)
-    {
-      unsigned int expr_id = get_expression_id (expr);
-      if (bitmap_bit_p (seen, expr_id))
-	return NULL;
-      bitmap_set_bit (seen, expr_id);
-    }
-
   switch (expr->kind)
     {
-      /* Constants contain no values that need translation.  */
-    case CONSTANT:
-      return expr;
-
     case NARY:
       {
 	unsigned int i;
@@ -1459,10 +1426,10 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	      continue;
 	    else
 	      {
+                pre_expr leader, result;
 		unsigned int op_val_id = VN_INFO (newnary.op[i])->value_id;
-		pre_expr leader = find_leader_in_sets (op_val_id, set1, set2);
-		pre_expr result = phi_translate_1 (leader, set1, set2,
-						   pred, phiblock, seen);
+		leader = find_leader_in_sets (op_val_id, set1, set2);
+                result = phi_translate (leader, set1, set2, pred, phiblock);
 		if (result && result != leader)
 		  {
 		    tree name = get_representative_for (result);
@@ -1529,7 +1496,6 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	      }
 	    add_to_value (new_val_id, expr);
 	  }
-	phi_trans_add (oldexpr, expr, pred);
 	return expr;
       }
       break;
@@ -1563,8 +1529,7 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	      {
 		unsigned int op_val_id = VN_INFO (op0)->value_id;
 		leader = find_leader_in_sets (op_val_id, set1, set2);
-		opresult = phi_translate_1 (leader, set1, set2,
-					    pred, phiblock, seen);
+		opresult = phi_translate (leader, set1, set2, pred, phiblock);
 		if (opresult && opresult != leader)
 		  {
 		    tree name = get_representative_for (opresult);
@@ -1581,8 +1546,7 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	      {
 		unsigned int op_val_id = VN_INFO (op1)->value_id;
 		leader = find_leader_in_sets (op_val_id, set1, set2);
-		opresult = phi_translate_1 (leader, set1, set2,
-					    pred, phiblock, seen);
+		opresult = phi_translate (leader, set1, set2, pred, phiblock);
 		if (opresult && opresult != leader)
 		  {
 		    tree name = get_representative_for (opresult);
@@ -1598,8 +1562,7 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	      {
 		unsigned int op_val_id = VN_INFO (op2)->value_id;
 		leader = find_leader_in_sets (op_val_id, set1, set2);
-		opresult = phi_translate_1 (leader, set1, set2,
-					    pred, phiblock, seen);
+		opresult = phi_translate (leader, set1, set2, pred, phiblock);
 		if (opresult && opresult != leader)
 		  {
 		    tree name = get_representative_for (opresult);
@@ -1682,7 +1645,6 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	    add_to_value (new_val_id, expr);
 	  }
 	VEC_free (vn_reference_op_s, heap, newoperands);
-	phi_trans_add (oldexpr, expr, pred);
 	return expr;
       }
       break;
@@ -1728,19 +1690,43 @@ phi_translate_1 (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
     }
 }
 
-/* Translate EXPR using phis in PHIBLOCK, so that it has the values of
-   the phis in PRED.
-   Return NULL if we can't find a leader for each part of the
-   translated expression.  */
+/* Wrapper around phi_translate_1 providing caching functionality.  */
 
 static pre_expr
 phi_translate (pre_expr expr, bitmap_set_t set1, bitmap_set_t set2,
 	       basic_block pred, basic_block phiblock)
 {
-  bitmap_clear (seen_during_translate);
-  return phi_translate_1 (expr, set1, set2, pred, phiblock,
-			  seen_during_translate);
+  pre_expr phitrans;
+
+  if (!expr)
+    return NULL;
+
+  /* Constants contain no values that need translation.  */
+  if (expr->kind == CONSTANT)
+    return expr;
+
+  if (value_id_constant_p (get_expr_value_id (expr)))
+    return expr;
+
+  if (expr->kind != NAME)
+    {
+      phitrans = phi_trans_lookup (expr, pred);
+      if (phitrans)
+	return phitrans;
+    }
+
+  /* Translate.  */
+  phitrans = phi_translate_1 (expr, set1, set2, pred, phiblock);
+
+  /* Don't add empty translations to the cache.  Neither add
+     translations of NAMEs as those are cheap to translate.  */
+  if (phitrans
+      && expr->kind != NAME)
+    phi_trans_add (expr, phitrans, pred);
+
+  return phitrans;
 }
+
 
 /* For each expression in SET, translate the values through phi nodes
    in PHIBLOCK using edge PHIBLOCK->PRED, and store the resulting
@@ -1754,7 +1740,7 @@ phi_translate_set (bitmap_set_t dest, bitmap_set_t set, basic_block pred,
   pre_expr expr;
   int i;
 
-  if (!phi_nodes (phiblock))
+  if (gimple_seq_empty_p (phi_nodes (phiblock)))
     {
       bitmap_set_copy (dest, set);
       return;
@@ -1765,12 +1751,16 @@ phi_translate_set (bitmap_set_t dest, bitmap_set_t set, basic_block pred,
     {
       pre_expr translated;
       translated = phi_translate (expr, set, NULL, pred, phiblock);
+      if (!translated)
+	continue;
 
-      /* Don't add empty translations to the cache  */
-      if (translated)
-	phi_trans_add (expr, translated, pred);
-
-      if (translated != NULL)
+      /* We might end up with multiple expressions from SET being
+	 translated to the same value.  In this case we do not want
+	 to retain the NARY or REFERENCE expression but prefer a NAME
+	 which would be the leader.  */
+      if (translated->kind == NAME)
+	bitmap_value_replace_in_set (dest, translated);
+      else
 	bitmap_value_insert_into_set (dest, translated);
     }
   VEC_free (pre_expr, heap, exprs);
@@ -2113,49 +2103,45 @@ compute_antic_aux (basic_block block, bool block_has_abnormal_pred_edge)
     {
       VEC(basic_block, heap) * worklist;
       size_t i;
-      basic_block bprime, first;
+      basic_block bprime, first = NULL;
 
       worklist = VEC_alloc (basic_block, heap, EDGE_COUNT (block->succs));
       FOR_EACH_EDGE (e, ei, block->succs)
-	VEC_quick_push (basic_block, worklist, e->dest);
-      first = VEC_index (basic_block, worklist, 0);
-
-      if (phi_nodes (first))
 	{
-	  bitmap_set_t from = ANTIC_IN (first);
-
-	  if (!BB_VISITED (first))
-	    from = maximal_set;
-	  phi_translate_set (ANTIC_OUT, from, block, first);
+	  if (!first
+	      && BB_VISITED (e->dest))
+	    first = e->dest;
+	  else if (BB_VISITED (e->dest))
+	    VEC_quick_push (basic_block, worklist, e->dest);
 	}
+
+      /* Of multiple successors we have to have visited one already.  */
+      if (!first)
+	{
+	  SET_BIT (changed_blocks, block->index);
+	  BB_VISITED (block) = 0;
+	  BB_DEFERRED (block) = 1;
+	  changed = true;
+	  VEC_free (basic_block, heap, worklist);
+	  goto maybe_dump_sets;
+	}
+
+      if (!gimple_seq_empty_p (phi_nodes (first)))
+	phi_translate_set (ANTIC_OUT, ANTIC_IN (first), block, first);
       else
-	{
-	  if (!BB_VISITED (first))
-	    bitmap_set_copy (ANTIC_OUT, maximal_set);
-	  else
-	    bitmap_set_copy (ANTIC_OUT, ANTIC_IN (first));
-	}
+	bitmap_set_copy (ANTIC_OUT, ANTIC_IN (first));
 
-      for (i = 1; VEC_iterate (basic_block, worklist, i, bprime); i++)
+      for (i = 0; VEC_iterate (basic_block, worklist, i, bprime); i++)
 	{
-	  if (phi_nodes (bprime))
+	  if (!gimple_seq_empty_p (phi_nodes (bprime)))
 	    {
 	      bitmap_set_t tmp = bitmap_set_new ();
-	      bitmap_set_t from = ANTIC_IN (bprime);
-
-	      if (!BB_VISITED (bprime))
-		from = maximal_set;
-	      phi_translate_set (tmp, from, block, bprime);
+	      phi_translate_set (tmp, ANTIC_IN (bprime), block, bprime);
 	      bitmap_set_and (ANTIC_OUT, tmp);
 	      bitmap_set_free (tmp);
 	    }
 	  else
-	    {
-	      if (!BB_VISITED (bprime))
-		bitmap_set_and (ANTIC_OUT, maximal_set);
-	      else
-		bitmap_set_and (ANTIC_OUT, ANTIC_IN (bprime));
-	    }
+	    bitmap_set_and (ANTIC_OUT, ANTIC_IN (bprime));
 	}
       VEC_free (basic_block, heap, worklist);
     }
@@ -2297,7 +2283,7 @@ compute_partial_antic_aux (basic_block block,
 	      FOR_EACH_EXPR_ID_IN_SET (ANTIC_IN (bprime), i, bi)
 		bitmap_value_insert_into_set (PA_OUT,
 					      expression_for_id (i));
-	      if (phi_nodes (bprime))
+	      if (!gimple_seq_empty_p (phi_nodes (bprime)))
 		{
 		  bitmap_set_t pa_in = bitmap_set_new ();
 		  phi_translate_set (pa_in, PA_IN (bprime), block, bprime);
@@ -2523,31 +2509,46 @@ create_component_ref_by_pieces_1 (basic_block block, vn_reference_t ref,
     {
     case CALL_EXPR:
       {
-	tree folded, sc = currop->op1;
+	tree folded, sc = NULL_TREE;
 	unsigned int nargs = 0;
-	tree *args = XNEWVEC (tree, VEC_length (vn_reference_op_s,
-						ref->operands) - 1);
+	tree fn, *args;
+	if (TREE_CODE (currop->op0) == FUNCTION_DECL)
+	  fn = currop->op0;
+	else
+	  {
+	    pre_expr op0 = get_or_alloc_expr_for (currop->op0);
+	    fn = find_or_generate_expression (block, op0, stmts, domstmt);
+	    if (!fn)
+	      return NULL_TREE;
+	  }
+	if (currop->op1)
+	  {
+	    pre_expr scexpr = get_or_alloc_expr_for (currop->op1);
+	    sc = find_or_generate_expression (block, scexpr, stmts, domstmt);
+	    if (!sc)
+	      return NULL_TREE;
+	  }
+	args = XNEWVEC (tree, VEC_length (vn_reference_op_s,
+					  ref->operands) - 1);
 	while (*operand < VEC_length (vn_reference_op_s, ref->operands))
 	  {
 	    args[nargs] = create_component_ref_by_pieces_1 (block, ref,
 							    operand, stmts,
 							    domstmt);
+	    if (!args[nargs])
+	      {
+		free (args);
+		return NULL_TREE;
+	      }
 	    nargs++;
 	  }
 	folded = build_call_array (currop->type,
-				   TREE_CODE (currop->op0) == FUNCTION_DECL
-				   ? build_fold_addr_expr (currop->op0)
-				   : currop->op0,
+				   (TREE_CODE (fn) == FUNCTION_DECL
+				    ? build_fold_addr_expr (fn) : fn),
 				   nargs, args);
 	free (args);
 	if (sc)
-	  {
-	    pre_expr scexpr = get_or_alloc_expr_for (sc);
-	    sc = find_or_generate_expression (block, scexpr, stmts, domstmt);
-	    if (!sc)
-	      return NULL_TREE;
-	    CALL_EXPR_STATIC_CHAIN (folded) = sc;
-	  }
+	  CALL_EXPR_STATIC_CHAIN (folded) = sc;
 	return folded;
       }
       break;
@@ -3507,11 +3508,7 @@ insert (void)
 }
 
 
-/* Add OP to EXP_GEN (block), and possibly to the maximal set if it is
-   not defined by a phi node.
-   PHI nodes can't go in the maximal sets because they are not in
-   TMP_GEN, so it is possible to get into non-monotonic situations
-   during ANTIC calculation, because it will *add* bits.  */
+/* Add OP to EXP_GEN (block), and possibly to the maximal set.  */
 
 static void
 add_to_exp_gen (basic_block block, tree op)
@@ -3523,9 +3520,6 @@ add_to_exp_gen (basic_block block, tree op)
 	return;
       result = get_or_alloc_expr_for_name (op);
       bitmap_value_insert_into_set (EXP_GEN (block), result);
-      if (TREE_CODE (op) != SSA_NAME
-	  || gimple_code (SSA_NAME_DEF_STMT (op)) != GIMPLE_PHI)
-	bitmap_value_insert_into_set (maximal_set, result);
     }
 }
 
@@ -3544,6 +3538,19 @@ make_values_for_phi (gimple phi, basic_block block)
       add_to_value (get_expr_value_id (e), e);
       bitmap_insert_into_set (PHI_GEN (block), e);
       bitmap_value_insert_into_set (AVAIL_OUT (block), e);
+      if (!in_fre)
+	{
+	  unsigned i;
+	  for (i = 0; i < gimple_phi_num_args (phi); ++i)
+	    {
+	      tree arg = gimple_phi_arg_def (phi, i);
+	      if (TREE_CODE (arg) == SSA_NAME)
+		{
+		  e = get_or_alloc_expr_for_name (arg);
+		  add_to_value (get_expr_value_id (e), e);
+		}
+	    }
+	}
     }
 }
 
@@ -3579,10 +3586,7 @@ compute_avail (void)
 
 	  add_to_value (get_expr_value_id (e), e);
 	  if (!in_fre)
-	    {
-	      bitmap_insert_into_set (TMP_GEN (ENTRY_BLOCK_PTR), e);
-	      bitmap_value_insert_into_set (maximal_set, e);
-	    }
+	    bitmap_insert_into_set (TMP_GEN (ENTRY_BLOCK_PTR), e);
 	  bitmap_value_insert_into_set (AVAIL_OUT (ENTRY_BLOCK_PTR), e);
 	}
     }
@@ -3598,10 +3602,7 @@ compute_avail (void)
 
 	  add_to_value (get_expr_value_id (e), e);
 	  if (!in_fre)
-	    {
-	      bitmap_insert_into_set (TMP_GEN (ENTRY_BLOCK_PTR), e);
-	      bitmap_value_insert_into_set (maximal_set, e);
-	    }
+	    bitmap_insert_into_set (TMP_GEN (ENTRY_BLOCK_PTR), e);
 	  bitmap_value_insert_into_set (AVAIL_OUT (ENTRY_BLOCK_PTR), e);
 	}
     }
@@ -3705,11 +3706,7 @@ compute_avail (void)
 		get_or_alloc_expression_id (result);
 		add_to_value (get_expr_value_id (result), result);
 		if (!in_fre)
-		  {
-		    bitmap_value_insert_into_set (EXP_GEN (block),
-						  result);
-		    bitmap_value_insert_into_set (maximal_set, result);
-		  }
+		  bitmap_value_insert_into_set (EXP_GEN (block), result);
 		continue;
 	      }
 
@@ -3791,10 +3788,7 @@ compute_avail (void)
 		get_or_alloc_expression_id (result);
 		add_to_value (get_expr_value_id (result), result);
 		if (!in_fre)
-		  {
-		    bitmap_value_insert_into_set (EXP_GEN (block), result);
-		    bitmap_value_insert_into_set (maximal_set, result);
-		  }
+		  bitmap_value_insert_into_set (EXP_GEN (block), result);
 
 		continue;
 	      }
@@ -4161,7 +4155,6 @@ init_pre (bool do_fre)
   expression_to_id = htab_create (num_ssa_names * 3,
 				  pre_expr_hash,
 				  pre_expr_eq, NULL);
-  seen_during_translate = BITMAP_ALLOC (&grand_bitmap_obstack);
   bitmap_set_pool = create_alloc_pool ("Bitmap sets",
 				       sizeof (struct bitmap_set), 30);
   pre_expr_pool = create_alloc_pool ("pre_expr nodes",
@@ -4173,7 +4166,6 @@ init_pre (bool do_fre)
       TMP_GEN (bb) = bitmap_set_new ();
       AVAIL_OUT (bb) = bitmap_set_new ();
     }
-  maximal_set = in_fre ? NULL : bitmap_set_new ();
 
   need_eh_cleanup = BITMAP_ALLOC (NULL);
 }
@@ -4254,10 +4246,9 @@ execute_pre (bool do_fre ATTRIBUTE_UNUSED)
       FOR_ALL_BB (bb)
 	{
 	  print_bitmap_set (dump_file, EXP_GEN (bb), "exp_gen", bb->index);
-	  print_bitmap_set (dump_file, TMP_GEN (bb), "tmp_gen",
-				  bb->index);
-	  print_bitmap_set (dump_file, AVAIL_OUT (bb), "avail_out",
-				  bb->index);
+	  print_bitmap_set (dump_file, PHI_GEN (bb), "phi_gen", bb->index);
+	  print_bitmap_set (dump_file, TMP_GEN (bb), "tmp_gen", bb->index);
+	  print_bitmap_set (dump_file, AVAIL_OUT (bb), "avail_out", bb->index);
 	}
     }
 

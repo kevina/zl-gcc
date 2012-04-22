@@ -970,7 +970,7 @@ extern int sparc_mode_class[];
    may be accessed via the stack pointer) in functions that seem suitable.
    Used in flow.c, global.c, ra.c and reload1.c.  */
 #define FRAME_POINTER_REQUIRED	\
-  (! (leaf_function_p () && only_leaf_regs_used ()))
+  (!(current_function_is_leaf && only_leaf_regs_used ()))
 
 /* Base register for access to arguments of the function.  */
 #define ARG_POINTER_REGNUM FRAME_POINTER_REGNUM
@@ -2296,9 +2296,6 @@ extern int sparc_indent_opcode;
 	sparc_indent_opcode = 0;	\
       }					\
   } while (0)
-
-#define SPARC_SYMBOL_REF_TLS_P(RTX) \
-  (GET_CODE (RTX) == SYMBOL_REF && SYMBOL_REF_TLS_MODEL (RTX) != 0)
 
 #define PRINT_OPERAND_PUNCT_VALID_P(CHAR) \
   ((CHAR) == '#' || (CHAR) == '*' || (CHAR) == '('		\

@@ -6096,6 +6096,9 @@ find_reloads_subreg_address (rtx x, int force_replace, int opnum,
 	      PUT_MODE (tem, GET_MODE (x));
 	      if (MEM_OFFSET (tem))
 		set_mem_offset (tem, plus_constant (MEM_OFFSET (tem), offset));
+	      if (MEM_SIZE (tem)
+		  && INTVAL (MEM_SIZE (tem)) != (HOST_WIDE_INT) outer_size)
+		set_mem_size (tem, GEN_INT (outer_size));
 
 	      /* If this was a paradoxical subreg that we replaced, the
 		 resulting memory must be sufficiently aligned to allow
@@ -6726,6 +6729,15 @@ find_equiv_reg (rtx goal, rtx insn, enum reg_class rclass, int other,
       num++;
       if (p == 0 || LABEL_P (p)
 	  || num > PARAM_VALUE (PARAM_MAX_RELOAD_SEARCH_INSNS))
+	return 0;
+
+      /* Don't reuse register contents from before a setjmp-type
+	 function call; on the second return (from the longjmp) it
+	 might have been clobbered by a later reuse.  It doesn't
+	 seem worthwhile to actually go and see if it is actually
+	 reused even if that information would be readily available;
+	 just don't reuse it across the setjmp call.  */
+      if (CALL_P (p) && find_reg_note (p, REG_SETJMP, NULL_RTX))
 	return 0;
 
       if (NONJUMP_INSN_P (p)
