@@ -6,7 +6,7 @@
 # The resulting file can be used with test result comparison scripts for
 # results from tests that were run in parallel.  See usage() below.
 
-# Copyright (C) 2008, 2009 Free Software Foundation
+# Copyright (C) 2008, 2009, 2010 Free Software Foundation
 # Contributed by Janis Johnson <janis187@us.ibm.com>
 #
 # This file is part of GCC.
@@ -299,7 +299,7 @@ BEGIN {
     next
   }
 }
-/\===/ { curvar = ""; next }
+/^\t\t=== .* ===$/ { curvar = ""; next }
 /^(PASS|XPASS|FAIL|XFAIL|UNRESOLVED|WARNING|ERROR|UNSUPPORTED|UNTESTED|KFAIL):/ {
   testname=\$2
   # Ugly hack for gfortran.dg/dg.exp
