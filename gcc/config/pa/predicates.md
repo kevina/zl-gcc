@@ -1,5 +1,5 @@
 ;; Predicate definitions for HP PA-RISC.
-;; Copyright (C) 2005, 2007 Free Software Foundation, Inc.
+;; Copyright (C) 2005, 2007, 2010 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -73,9 +73,10 @@
       return 1;
     case CONST:
       op = XEXP (op, 0);
-      return (((GET_CODE (XEXP (op, 0)) == SYMBOL_REF
-                && !SYMBOL_REF_TLS_MODEL (XEXP (op, 0)))
-	       || GET_CODE (XEXP (op, 0)) == LABEL_REF)
+      return (GET_CODE (op) == PLUS
+	      && ((GET_CODE (XEXP (op, 0)) == SYMBOL_REF
+		   && !SYMBOL_REF_TLS_MODEL (XEXP (op, 0)))
+		  || GET_CODE (XEXP (op, 0)) == LABEL_REF)
 	      && GET_CODE (XEXP (op, 1)) == CONST_INT);
     default:
       return 0;
@@ -420,9 +421,9 @@
   (ior (match_operand 0 "register_operand")
        (match_operand 0 "cint_ior_operand")))
 
-;; True iff OP is a CONST_INT of the forms 0...0xxxx, 0...01...1xxxx,
-;; or 1...1xxxx. Such values can be the left hand side x in (x << r),
-;; using the zvdepi instruction.
+;; True iff OP is a CONST_INT of the forms 0...0xxxx or
+;; 0...01...1xxxx. Such values can be the left hand side x in (x <<
+;; r), using the zvdepi instruction.
 
 (define_predicate "lhs_lshift_cint_operand"
   (match_code "const_int")
